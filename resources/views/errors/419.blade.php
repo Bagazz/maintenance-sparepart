@@ -1,0 +1,1 @@
+@include('errors.layout', ['kode' => 419, 'judul' => __('Session expired'), 'pesan' => __('The page was left open too long so its security session expired. Reload the page and repeat your last step.')])

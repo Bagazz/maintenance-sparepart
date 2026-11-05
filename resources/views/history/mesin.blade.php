@@ -1,0 +1,1 @@
+@include('history._direktori', ['judul' => __('Machine / Job Directory'), 'keterangan' => __('Choose a machine or PM Job number to see its part usage history'), 'daftar' => $daftarMesin, 'param' => 'mesin'])

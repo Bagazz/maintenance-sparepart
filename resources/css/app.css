@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Komponen dasar yang dipakai di semua halaman (layout x-shell). */
+@layer components {
+    .card        { @apply bg-white rounded-2xl border border-slate-200/80 shadow-card; }
+    .btn         { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition active:scale-[.98] disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus-visible:ring-4; }
+    .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-200 shadow-sm; }
+    .btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-200 shadow-sm; }
+    .btn-danger  { @apply btn bg-accent-600 text-white hover:bg-accent-700 focus-visible:ring-accent-100; }
+    .btn-ghost   { @apply btn bg-white text-slate-700 border border-slate-200 hover:border-brand-300 hover:text-brand-700 focus-visible:ring-brand-100; }
+    .input       { @apply w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100 transition; }
+    .label       { @apply block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5; }
+    .badge       { @apply inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold; }
+    .kpi-label   { @apply text-xs font-bold text-slate-500 uppercase tracking-wider; }
+    .nav-link    { @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-brand-100/80 hover:bg-white/10 hover:text-white transition; }
+    .nav-active  { @apply bg-white text-brand-800 shadow-sm hover:bg-white hover:text-brand-800; }
+}
+
+[x-cloak] { display: none !important; }
+body { -webkit-tap-highlight-color: transparent; }
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+
+/* Hormati pengaturan "kurangi animasi" di perangkat. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
