@@ -12,11 +12,14 @@ use Illuminate\Support\Facades\Hash;
  */
 class Karyawan extends Model
 {
+    /** Pilihan shift (sama untuk admin dan teknisi). */
+    public const SHIFT = ['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'];
+
     /** Password salah berturut-turut sebanyak ini -> akun terkunci sampai dibuka admin. */
     public const MAKS_PIN_SALAH = 5;
 
     // Kolom PIN sengaja tidak fillable: hanya diubah lewat aturPin() / bukaKunci().
-    protected $fillable = ['nomor_kartu', 'nama', 'bagian', 'shift', 'aktif'];
+    protected $fillable = ['nomor_kartu', 'nama', 'bagian', 'shift', 'shift_dikonfirmasi_at', 'aktif'];
 
     protected $hidden = ['pin_hash'];
 
@@ -24,6 +27,7 @@ class Karyawan extends Model
         'aktif'           => 'boolean',
         'pin_terkunci_at' => 'datetime',
         'pin_diatur_at'   => 'datetime',
+        'shift_dikonfirmasi_at' => 'datetime',
     ];
 
     public function historyLogs()
@@ -133,6 +137,21 @@ class Karyawan extends Model
         ])->save();
 
         return false;
+    }
+
+    /**
+     * Shift bergilir tiap minggu: shift dianggap sudah pasti bila diisi dan dikonfirmasi
+     * (oleh teknisi atau admin) sejak Senin minggu ini.
+     */
+    public function getShiftMingguIniAttribute(): bool
+    {
+        return $this->shift !== null && $this->shift_dikonfirmasi_at !== null
+            && $this->shift_dikonfirmasi_at->gte(now()->startOfWeek());
+    }
+
+    public function aturShift(string $shift): void
+    {
+        $this->forceFill(['shift' => $shift, 'shift_dikonfirmasi_at' => now()])->save();
     }
 
     public function getSisaPercobaanAttribute(): int

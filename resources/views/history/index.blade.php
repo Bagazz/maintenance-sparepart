@@ -46,10 +46,19 @@
                             class="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold transition">{{ $label }}</button>
                 @endforeach
             </div>
-            <a href="{{ route('history.export-pdf', request()->query()) }}" class="btn-ghost">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                Export PDF
-            </a>
+            {{-- Ekspor mengikuti tab yang sedang dibuka + filter yang sama dengan tabel --}}
+            @php $kueriEkspor = collect(request()->query())->except(['tab', 'out_page', 'in_page', 'adj_page'])->all(); @endphp
+            <div class="flex items-center gap-2">
+                <span class="hidden text-xs font-semibold text-slate-400 sm:inline">{{ __('Export this tab') }}</span>
+                <a :href="urlEkspor(@js(route('history.export-pdf', $kueriEkspor)), activeTab)" class="btn-ghost">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    PDF
+                </a>
+                <a :href="urlEkspor(@js(route('history.export-csv', $kueriEkspor)), activeTab)" class="btn-ghost">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    CSV
+                </a>
+            </div>
         </div>
 
         <form method="GET" action="{{ route('history.index') }}" x-data="historySearch(@js($q ?? ''))" class="flex flex-col gap-2 border-b border-slate-100 p-4 md:flex-row">
@@ -104,7 +113,8 @@
                         <tr class="hover:bg-brand-50/40">
                             <td class="px-4 py-3">
                                 <p class="font-bold text-slate-800">{{ $h->created_at->format('d M Y') }}</p>
-                                <p class="text-[11px] text-slate-400">{{ $h->created_at->format('H:i') }} · {{ $h->shift }}</p>
+                                {{-- ERP tidak mencatat jam: jam/shift hanya untuk scan aplikasi --}}
+                                <p class="text-[11px] text-slate-400">{{ $h->source_ref ? __('ERP import') : $h->created_at->format('H:i') . ' · ' . $h->shift }}</p>
                             </td>
                             <td class="px-4 py-3">
                                 <p class="font-semibold text-slate-800">{{ $h->item_name ?? '-' }}</p>
@@ -205,6 +215,9 @@
 
     <x-slot:scripts>
         <script>
+            // Tautan ekspor + tab yang sedang dibuka.
+            function urlEkspor(dasar, tab) { const u = new URL(dasar, location.origin); u.searchParams.set('tab', tab); return u.toString(); }
+
             function historySearch(awal) {
                 return {
                     q: awal, hasil: [], adaFilterAktif: awal !== '', aktif: -1,

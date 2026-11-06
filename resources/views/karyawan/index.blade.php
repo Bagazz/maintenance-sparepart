@@ -63,7 +63,7 @@
                                 <p class="text-xs font-semibold text-slate-500">
                                     @if($k->nomor_kartu)<span class="font-mono text-slate-700">{{ __('No.') }} {{ $k->nomor_kartu }}</span> · @endif
                                     @if($k->bagian){{ $k->bagian }} · @endif
-                                    @if($k->shift){{ $k->shift }} · @endif
+                                    @if($k->shift){{ $k->shift }}@unless($k->shift_minggu_ini) <span class="text-amber-700">({{ __('not confirmed this week') }})</span>@endunless · @endif
                                     {{ __(':n transactions', ['n' => $k->jumlah_transaksi]) }}
                                 </p>
                                 <p class="mt-1">
@@ -132,8 +132,8 @@
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="label" for="bagian">{{ __('Section') }}</label>
-                        <input id="bagian" name="bagian" value="{{ old('bagian') }}" class="input" placeholder="{{ __('Mechanical / Electrical') }}">
+                        <label class="label" for="bagian">{{ __('Position') }}</label>
+                        <input id="bagian" name="bagian" list="daftar-jabatan" value="{{ old('bagian') }}" class="input" placeholder="{{ __('e.g. Mechanical Technician') }}">
                     </div>
                     <div>
                         <label class="label" for="shift">Shift</label>
@@ -149,15 +149,21 @@
             <form method="POST" action="{{ route('karyawan.import') }}" enctype="multipart/form-data" class="card space-y-3 p-5" x-data="{ nama: '' }">
                 @csrf
                 <p class="font-bold text-slate-800">{{ __('Bulk import') }}</p>
-                <p class="text-xs text-slate-500">{{ __('Excel/CSV file, first row is the header:') }} <span class="font-mono font-bold">Nama | Nomor | Bagian | Shift</span>. {{ __('"Nomor" is optional. Existing names will be updated.') }}</p>
+                <p class="text-xs text-slate-500">{{ __('Excel/CSV file, first row is the header:') }} <span class="font-mono font-bold">Nama | No ID | Jabatan | Shift</span>. {{ __('"No ID" is optional. Existing names will be updated. The sheet that has a "Nama" column is used.') }}</p>
                 <label class="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 p-5 text-center transition hover:border-brand-400 hover:bg-brand-50/40">
                     <span class="text-sm font-bold text-brand-600" x-text="nama || @js(__('Choose .xlsx / .csv file'))"></span>
                     <input type="file" name="file" accept=".xlsx,.xls,.csv" class="hidden" required @change="nama = $event.target.files[0]?.name">
+                </label>
+                <label class="flex items-start gap-2 text-xs text-slate-600">
+                    <input type="checkbox" name="password_dari_id" value="1" checked class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600">
+                    <span>{{ __('Use the No ID as the starting password for employees who have no password yet') }}</span>
                 </label>
                 <button class="btn-ghost w-full" :disabled="!nama">{{ __('Import') }}</button>
             </form>
         </div>
     </div>
+
+    <datalist id="daftar-jabatan">@foreach(\App\Models\Karyawan::whereNotNull('bagian')->distinct()->orderBy('bagian')->pluck('bagian') as $j)<option value="{{ $j }}">@endforeach</datalist>
 
     {{-- ============ MODAL PASSWORD ============ --}}
     <div x-show="pinUntuk" x-cloak class="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 sm:items-center" @keydown.escape.window="pinUntuk = null">
@@ -196,8 +202,8 @@
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="label">{{ __('Section') }}</label>
-                    <input name="bagian" :value="edit?.bagian" class="input">
+                    <label class="label">{{ __('Position') }}</label>
+                    <input name="bagian" list="daftar-jabatan" :value="edit?.bagian" class="input">
                 </div>
                 <div>
                     <label class="label">Shift</label>

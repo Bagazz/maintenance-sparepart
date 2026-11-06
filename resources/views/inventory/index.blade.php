@@ -17,12 +17,27 @@
                 <p class="truncate text-lg font-extrabold text-slate-900">{{ $karyawan->nama }}
                     @if($karyawan->nomor_kartu)<span class="ml-1 font-mono text-xs font-bold text-slate-400">#{{ $karyawan->nomor_kartu }}</span>@endif
                 </p>
+                @if($karyawan->bagian)<span class="badge mt-0.5 bg-brand-50 text-brand-700">{{ $karyawan->bagian }}</span>@endif
             </div>
+            {{-- Shift bergilir tiap minggu: teknisi memastikan / mengganti shift-nya sendiri --}}
+            <form method="POST" action="{{ route('inventory.shift') }}"
+                  class="flex items-center gap-2 rounded-xl px-3 py-2 {{ $karyawan->shift_minggu_ini ? 'bg-slate-50' : 'bg-amber-50 ring-2 ring-amber-300' }}">
+                @csrf
+                <label for="shift-saya" class="text-xs font-bold uppercase tracking-wider {{ $karyawan->shift_minggu_ini ? 'text-slate-400' : 'text-amber-800' }}">{{ __('Shift this week') }}</label>
+                <select id="shift-saya" name="shift" class="input w-auto py-1.5 text-sm font-bold" required>
+                    <option value="" disabled @selected(!$karyawan->shift)>{{ __('Choose...') }}</option>
+                    @foreach(\App\Models\Karyawan::SHIFT as $s)<option @selected($karyawan->shift === $s)>{{ $s }}</option>@endforeach
+                </select>
+                <button class="{{ $karyawan->shift_minggu_ini ? 'btn-ghost' : 'btn-primary' }} px-3 py-1.5 text-xs">{{ $karyawan->shift_minggu_ini ? __('Save') : __('Confirm shift') }}</button>
+            </form>
             <div class="text-right">
                 <p class="text-xs font-bold uppercase tracking-wider text-slate-400">{{ __('Session ends in') }}</p>
                 <p class="font-mono text-lg font-bold" :class="sisa < 60 ? 'text-accent-600' : 'text-slate-700'" x-text="label"></p>
             </div>
             <a href="{{ route('inventory.ganti-peminjam') }}" class="btn-ghost">{{ __('Sign out') }}</a>
+            @unless($karyawan->shift_minggu_ini)
+                <p class="w-full text-sm font-semibold text-amber-800">{{ __('Shifts rotate every week. Choose your shift for this week and press Confirm shift before confirming the cart.') }}</p>
+            @endunless
         </div>
     @endif
 

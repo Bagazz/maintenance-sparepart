@@ -6,7 +6,7 @@ use App\Models\Inventory;
 use App\Services\AnalitikBiayaService;
 use App\Services\PurchaseRequestExcel;
 use App\Services\RekonsiliasiService;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Support\Ekspor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -110,6 +110,10 @@ class DashboardController extends Controller
             ->get();
 
         $nomor = 'PR-MTC-' . now()->format('ymd-Hi');
+        if ($request->get('format') === 'csv') {
+            return Ekspor::unduhCsv($nomor . '.csv', $excel->header(), $excel->barisCsv($barang));
+        }
+
         $buku = $excel->buat($barang, [
             'nomor'   => $nomor,
             'tanggal' => now()->translatedFormat('d F Y'),
@@ -118,9 +122,7 @@ class DashboardController extends Controller
                 . ($q ? ' ' . __('Filter: ":q".', ['q' => $q]) : ''),
         ]);
 
-        return response()->streamDownload(function () use ($buku) {
-            (new Xlsx($buku))->save('php://output');
-        }, $nomor . '.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+        return Ekspor::unduhXlsx($buku, $nomor . '.xlsx');
     }
 
     private function queryRestock(?string $q)

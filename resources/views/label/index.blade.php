@@ -8,8 +8,8 @@
     $perRak = $part->groupBy(fn ($p) => \App\Models\Inventory::uraiLokasi($p->lokasi_rak)['kode_rak'] ?? $p->lokasi_rak)
         ->map(fn ($g, $kode) => (object) ['kode' => $kode, 'part' => $g->count(), 'laci' => $g->pluck('lokasi_rak')->unique()->count()])
         ->sortBy('kode', SORT_NATURAL)->values();
-    // Perkiraan label per lembar stiker A4 (margin 8 mm): kecil 3x11, sedang 2x8, besar 1x5.
-    $perLembar = ['kecil' => 33, 'sedang' => 16, 'besar' => 5];
+    // Perkiraan label per lembar stiker A4 (margin 8 mm): kecil 3x11, sedang 2x8, besar 1x5, tiga kolom 3x8.
+    $perLembar = ['kecil' => 33, 'sedang' => 16, 'besar' => 5, 'tiga' => 24];
 @endphp
 <x-shell :title="__('Print Labels')" :subtitle="__('Barcode labels for drawers and parts — scan them at the kiosk and during stock counts')">
 

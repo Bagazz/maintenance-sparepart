@@ -68,6 +68,20 @@ class InventoryController extends Controller
         return $this->keluarKiosk($request, session('error') ?? __('Session ended. Sign in with your name and password.'), session()->has('error') ? 'error' : 'status');
     }
 
+    /** Teknisi memastikan / mengganti shift-nya minggu ini (Kepala Spare Part tetap bisa mengatur di menu Karyawan). */
+    public function aturShift(Request $request)
+    {
+        $karyawan = $this->karyawanSesi();
+        if (!$karyawan) {
+            return redirect()->route('inventory.pilih-peminjam');
+        }
+
+        $data = $request->validate(['shift' => ['required', \Illuminate\Validation\Rule::in(Karyawan::SHIFT)]]);
+        $karyawan->aturShift($data['shift']);
+
+        return back()->with('success', __('Your shift this week: :shift.', ['shift' => $data['shift']]));
+    }
+
     public function gantiPeminjam(Request $request)
     {
         return $this->keluarKiosk($request, __('Signed out. The next technician can sign in with their own name and password.'));
@@ -318,6 +332,11 @@ class InventoryController extends Controller
 
         if (!$isAdmin && !$karyawan) {
             return redirect()->route('inventory.pilih-peminjam')->with('error', __('Session ended. Sign in with your name and password.'));
+        }
+
+        // Sama seperti konfirmasi keranjang: shift minggu ini wajib dipastikan dulu.
+        if ($karyawan && !$karyawan->shift_minggu_ini) {
+            return back()->with('error', __('Confirm your shift for this week first (at the top of the page).'))->withInput();
         }
 
         $request->validate([
@@ -598,6 +617,11 @@ class InventoryController extends Controller
 
         if (empty($keranjang)) {
             return back()->with('error', __('The cart is still empty.'));
+        }
+
+        // Shift bergilir tiap minggu: teknisi wajib memastikan shift-nya dulu.
+        if ($karyawan && !$karyawan->shift_minggu_ini) {
+            return back()->with('error', __('Confirm your shift for this week first (at the top of the page).'));
         }
 
         $request->validate([

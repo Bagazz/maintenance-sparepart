@@ -99,9 +99,20 @@ class KaryawanController extends Controller
             // Nama = nama login, jadi wajib unik (dibandingkan setelah dirapikan ke HURUF BESAR).
             'nama'        => ['required', 'string', 'max:255', Rule::unique('karyawans', 'nama')->ignore($karyawan?->id)],
             'bagian'      => ['nullable', 'string', 'max:100'],
-            'shift'       => ['nullable', Rule::in(['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'])],
+            'shift'       => ['nullable', Rule::in(Karyawan::SHIFT)],
             'aktif'       => ['nullable', 'boolean'],
         ];
+    }
+
+    /**
+     * Jabatan dari Excel: yang ditulis huruf kecil semua dirapikan ("electrical technician" -> "Electrical Technician");
+     * selain itu dibiarkan apa adanya supaya singkatan seperti "PM" / "CI" tidak berubah.
+     */
+    private static function rapikanJabatan(mixed $nilai): string
+    {
+        $j = trim(preg_replace('/\s+/', ' ', (string) $nilai));
+
+        return $j === mb_strtolower($j) ? mb_convert_case($j, MB_CASE_TITLE) : $j;
     }
 
     private function rapikan(array $data, Request $request): array
@@ -110,6 +121,8 @@ class KaryawanController extends Controller
             ? Karyawan::normalNomor($data['nomor_kartu']) : null;
         $data['nama'] = Karyawan::normalNama($data['nama']);
         $data['aktif'] = $request->boolean('aktif', true);
+        // Shift yang diisi Kepala Spare Part dianggap sudah pasti untuk minggu ini.
+        $data['shift_dikonfirmasi_at'] = !empty($data['shift']) ? now() : null;
 
         return $data;
     }
@@ -128,6 +141,9 @@ class KaryawanController extends Controller
         $request->merge(['nomor_kartu' => Karyawan::normalNomor($request->nomor_kartu) ?: null, 'nama' => Karyawan::normalNama($request->nama)]);
         $data = $this->rapikan($request->validate($this->aturan($karyawan)), $request);
         unset($data['aktif']); // status aktif hanya diubah lewat tombol Aktifkan/Nonaktifkan
+        if (($data['shift'] ?? null) === $karyawan->shift) {
+            unset($data['shift_dikonfirmasi_at']); // shift tidak diubah: konfirmasi teknisi tetap berlaku
+        }
         $karyawan->update($data);
 
         return back()->with('success', __('Data for :nama updated.', ['nama' => $karyawan->nama]));
@@ -147,9 +163,19 @@ class KaryawanController extends Controller
      */
     public function import(Request $request)
     {
-        $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv,txt|max:5120']);
+        $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv,txt|max:5120', 'password_dari_id' => 'nullable|boolean']);
+        $passwordDariId = $request->boolean('password_dari_id');
 
-        $sheet = IOFactory::load($request->file('file')->getPathname())->getActiveSheet();
+        // File bisa berisi beberapa sheet (mis. daftar mesin + Userlist): pakai sheet pertama yang punya kolom "Nama".
+        $buku = IOFactory::load($request->file('file')->getPathname());
+        $sheet = $buku->getActiveSheet();
+        foreach ($buku->getWorksheetIterator() as $ws) {
+            $kepala = array_map(fn ($h) => strtolower(trim((string) $h)), $ws->rangeToArray('A1:' . $ws->getHighestColumn() . '1', null, true, false)[0] ?? []);
+            if (in_array('nama', $kepala, true)) {
+                $sheet = $ws;
+                break;
+            }
+        }
         $baris = $sheet->toArray(null, true, true, false);
         $header = array_map(fn ($h) => strtolower(trim((string) $h)), array_shift($baris) ?? []);
 
@@ -165,19 +191,19 @@ class KaryawanController extends Controller
         };
 
         $kol = [
-            'nomor'  => $cari(['nomor kartu', 'no kartu', 'nik', 'nomor', 'no. karyawan', 'id karyawan', 'id']),
+            'nomor'  => $cari(['nomor kartu', 'no kartu', 'no id', 'nik', 'nomor', 'no. karyawan', 'id karyawan', 'id']),
             'nama'   => $cari(['nama']),
-            'bagian' => $cari(['bagian', 'divisi', 'departemen', 'jabatan']),
+            'bagian' => $cari(['jabatan', 'posisi', 'position', 'bagian', 'divisi', 'departemen']),
             'shift'  => $cari(['shift']),
         ];
 
         if ($kol['nama'] === null) {
-            return back()->with('error', __('Column "Nama" was not found in the first row of the file. Example header: Nama | Nomor | Bagian | Shift'));
+            return back()->with('error', __('Column "Nama" was not found in the first row of the file. Example header: Nama | No ID | Jabatan | Shift'));
         }
 
-        $hasil = ['baru' => 0, 'diperbarui' => 0, 'dilewati' => 0];
+        $hasil = ['baru' => 0, 'diperbarui' => 0, 'dilewati' => 0, 'password' => 0];
 
-        DB::transaction(function () use ($baris, $kol, &$hasil) {
+        DB::transaction(function () use ($baris, $kol, $passwordDariId, &$hasil) {
             foreach ($baris as $r) {
                 $nomor = $kol['nomor'] !== null ? Karyawan::normalNomor($r[$kol['nomor']] ?? '') : '';
                 $nama = Karyawan::normalNama($r[$kol['nama']] ?? '');
@@ -198,13 +224,20 @@ class KaryawanController extends Controller
                 $k->fill([
                     'nama'        => $nama,
                     'nomor_kartu' => $nomor !== '' ? $nomor : $k->nomor_kartu,
-                    'bagian' => $kol['bagian'] !== null ? (trim((string) ($r[$kol['bagian']] ?? '')) ?: null) : $k->bagian,
-                    'shift'  => in_array($shift, ['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'], true) ? $shift : $k->shift,
+                    'bagian' => $kol['bagian'] !== null ? (self::rapikanJabatan($r[$kol['bagian']] ?? '') ?: null) : $k->bagian,
+                    'shift'  => in_array($shift, Karyawan::SHIFT, true) ? $shift : $k->shift,
                     'aktif'  => true,
                 ])->save();
+
+                // Password awal = No ID, hanya untuk yang belum punya password (password yang sudah diatur tidak ditimpa).
+                if ($passwordDariId && $nomor !== '' && !$k->punya_pin && Karyawan::passwordValid($nomor)) {
+                    $k->aturPin($nomor);
+                    $hasil['password']++;
+                }
             }
         });
 
-        return back()->with('success', __('Import finished: :baru new, :ubah updated, :lewat rows skipped.', ['baru' => $hasil['baru'], 'ubah' => $hasil['diperbarui'], 'lewat' => $hasil['dilewati']]));
+        return back()->with('success', __('Import finished: :baru new, :ubah updated, :lewat rows skipped.', ['baru' => $hasil['baru'], 'ubah' => $hasil['diperbarui'], 'lewat' => $hasil['dilewati']])
+            . ($hasil['password'] ? ' ' . __(':n employees can now sign in with their name and password = their No ID.', ['n' => $hasil['password']]) : ''));
     }
 }

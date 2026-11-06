@@ -50,7 +50,7 @@
         </div>
         <div class="flex-1">
             <p class="font-bold text-slate-800">{{ __('Monthly report for the President Director') }}</p>
-            <p class="text-xs text-slate-500">{{ __('Key points, month vs last month & FY, 12-month trend, top machines, purchase quality, restock and losses. PDF to read or forward, Excel to dig into.') }}</p>
+            <p class="text-xs text-slate-500">{{ __('Key points, month vs last month & FY, 12-month trend, top machines, purchase quality, restock and losses. PDF to read or forward, Excel to dig into, CSV for other systems.') }}</p>
         </div>
         <select name="bulan" class="input md:w-56" aria-label="{{ __('Month') }}">
             @foreach($pilihanBulan as $v => $l)
@@ -60,6 +60,7 @@
         <div class="flex gap-2">
             <button name="format" value="pdf" class="btn-primary flex-1 whitespace-nowrap">PDF</button>
             <button name="format" value="xlsx" class="btn-success flex-1 whitespace-nowrap">Excel</button>
+            <button name="format" value="csv" class="btn-ghost flex-1 whitespace-nowrap" title="{{ __('CSV files (one per table) in a ZIP') }}">CSV</button>
         </div>
     </form>
 

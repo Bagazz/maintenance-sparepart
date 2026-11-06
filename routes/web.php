@@ -61,6 +61,7 @@ Route::middleware(['auth', 'role:admin,user'])->group(function () {
     // Teknisi login dengan nama + password di halaman login. Sesi berakhir -> akun kiosk keluar ke halaman login.
     Route::get('/inventory/pilih-peminjam', [InventoryController::class, 'pilihPeminjam'])->name('inventory.pilih-peminjam');
     Route::get('/inventory/ganti-peminjam', [InventoryController::class, 'gantiPeminjam'])->name('inventory.ganti-peminjam');
+    Route::post('/inventory/shift', [InventoryController::class, 'aturShift'])->name('inventory.shift');
 
     // PAGE 2: pencarian barang (tetap 1 menu "Inventory")
     Route::post('/inventory/pinjam', [InventoryController::class, 'pinjam'])->name('inventory.pinjam');
@@ -98,6 +99,7 @@ Route::middleware(['auth', 'role:admin,viewer'])->group(function () {
     Route::get('/history', [HistoryController::class, 'index'])->name('history.index');
     Route::get('/history/suggest', [HistoryController::class, 'suggest'])->name('history.suggest');
     Route::get('/history/export-pdf', [HistoryController::class, 'exportPdf'])->name('history.export-pdf');
+    Route::get('/history/export-csv', [HistoryController::class, 'exportCsv'])->name('history.export-csv');
     Route::get('/history/mesin', [HistoryController::class, 'daftarMesin'])->name('history.mesin');
     Route::get('/history/operator', [HistoryController::class, 'daftarOperator'])->name('history.operator');
     Route::get('/rekonsiliasi', [RekonsiliasiController::class, 'index'])->name('rekonsiliasi.index');

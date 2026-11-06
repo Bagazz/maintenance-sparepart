@@ -29,7 +29,10 @@
         <div class="card overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
                 <p class="font-bold text-slate-800">{{ __(':n parts', ['n' => $pr->items->count()]) }}</p>
-                <a href="{{ route('pr.excel', $pr) }}" class="btn-ghost px-3 py-1.5 text-xs">{{ __('Download Excel') }}</a>
+                <div class="flex gap-2">
+                    <a href="{{ route('pr.excel', $pr) }}" class="btn-ghost px-3 py-1.5 text-xs">{{ __('Download Excel') }}</a>
+                    <a href="{{ route('pr.excel', [$pr, 'format' => 'csv']) }}" class="btn-ghost px-3 py-1.5 text-xs">CSV</a>
+                </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">

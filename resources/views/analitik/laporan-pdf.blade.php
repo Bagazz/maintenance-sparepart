@@ -21,7 +21,6 @@
         h2 { font-size: 10.5pt; margin: 14pt 0 5pt; color: #004e92; border-bottom: 1.2pt solid #004e92; padding-bottom: 2pt; }
         p { margin: 0; }
         table { width: 100%; border-collapse: collapse; }
-        .kop td { vertical-align: middle; }
         .muted { color: #64748b; }
         .kecil { font-size: 7.3pt; }
         .tebal { font-weight: bold; }
@@ -45,39 +44,18 @@
         .isi-hijau { height: 5pt; background: #10b981; }
         .isi-merah { height: 5pt; background: #e4002b; }
         .catatan { background: #fffbeb; border: 0.6pt solid #fcd34d; padding: 6pt 8pt; color: #78350f; margin-top: 8pt; }
-        .footer { position: fixed; bottom: -10mm; left: 0; right: 0; font-size: 7pt; color: #94a3b8; }
-        .halaman:after { content: counter(page); }
         .putus { page-break-before: always; }
+        @include('ekspor._gaya')
     </style>
 </head>
 <body>
-    <div class="footer">
-        <table><tr>
-            <td>PT Detpak Indonesia · {{ __('Spare Part Monthly Report') }} · {{ $judul }} · {{ __('Generated :tgl', ['tgl' => $dibuat->translatedFormat('d M Y H:i')]) }}</td>
-            <td class="kanan">{{ __('Page') }} <span class="halaman"></span></td>
-        </tr></table>
-    </div>
-
-    {{-- ============ KOP ============ --}}
-    <table class="kop">
-        <tr>
-            <td style="width: 60%">
-                <p class="kecil tebal muted" style="letter-spacing: 1pt">PT DETPAK INDONESIA · MAINTENANCE PAPER DIVISION</p>
-                <h1>{{ __('Spare Part Monthly Report') }}</h1>
-                <p style="font-size: 12pt; font-weight: bold">{{ $judul }}{{ $sebagian ? ' (' . __('to date') . ')' : '' }}</p>
-                <p class="muted">{{ __('Period :dari – :sampai · compared with :lalu and :fy', ['dari' => $awal->translatedFormat('d M Y'), 'sampai' => $akhir->translatedFormat('d M Y'), 'lalu' => $label_lalu, 'fy' => $label_fy]) }}</p>
-            </td>
-            <td class="kanan">
-                {{-- Logo PNG butuh ekstensi GD di PHP; tanpa GD pakai logo teks agar PDF tetap jadi. --}}
-                @if(extension_loaded('gd'))
-                    <img src="{{ public_path('images/detpak.png') }}" style="height: 34pt" alt="">
-                @else
-                    <span style="font-size: 18pt; font-weight: bold; color: #004e92; letter-spacing: 1pt">DETPAK</span><br>
-                    <span class="kecil muted">Detmold Group</span>
-                @endif
-            </td>
-        </tr>
-    </table>
+    {{-- ============ KOP (logo Detpak) & KAKI HALAMAN — sama dengan semua ekspor ============ --}}
+    @include('ekspor._kop', [
+        'judulDok' => __('Spare Part Monthly Report'),
+        'subjudul' => $judul . ($sebagian ? ' (' . __('to date') . ')' : ''),
+        'keterangan' => [__('Period :dari – :sampai · compared with :lalu and :fy', ['dari' => $awal->translatedFormat('d M Y'), 'sampai' => $akhir->translatedFormat('d M Y'), 'lalu' => $label_lalu, 'fy' => $label_fy])],
+        'kaki' => __('Spare Part Monthly Report') . ' · ' . $judul,
+    ])
 
     {{-- ============ SOROTAN ============ --}}
     <div class="sorotan">

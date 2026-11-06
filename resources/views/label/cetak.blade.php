@@ -5,6 +5,7 @@
         'kecil'  => ['pad' => 1.5, 'judul' => 3.8, 'sub' => 2.0, 'bc' => 8,  'bcTinggi' => 40, 'isiBaris' => 0],
         'sedang' => ['pad' => 2.2, 'judul' => 5.0, 'sub' => 2.4, 'bc' => 12, 'bcTinggi' => 40, 'isiBaris' => 1],
         'besar'  => ['pad' => 3.2, 'judul' => 7.0, 'sub' => 3.0, 'bc' => 18, 'bcTinggi' => 50, 'isiBaris' => 2],
+        'tiga'   => ['pad' => 1.8, 'judul' => 4.4, 'sub' => 2.2, 'bc' => 11, 'bcTinggi' => 40, 'isiBaris' => 1],
     ][$ukuran];
     $printer = $mode === 'printer';
 @endphp
@@ -23,7 +24,7 @@
         .bar strong { color: #0f172a; font-size: 15px; }
         .bar button:disabled { opacity: .45; cursor: not-allowed; }
         .bar button { background: #004e92; color: #fff; border: 0; border-radius: 12px; padding: 10px 20px; font: inherit; font-weight: 700; cursor: pointer; }
-        .lembar { display: grid; grid-template-columns: repeat(auto-fill, {{ $w }}mm); justify-content: center; gap: 0; padding: 20px; }
+        .lembar { display: grid; grid-template-columns: repeat(auto-fill, {{ $w }}mm); justify-content: center; gap: {{ $ukuran === 'tiga' && !$printer ? '2mm' : '0' }}; padding: 20px; }
         .label {
             width: {{ $w }}mm; height: {{ $h }}mm; padding: {{ $gaya['pad'] }}mm;
             background: #fff; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between;

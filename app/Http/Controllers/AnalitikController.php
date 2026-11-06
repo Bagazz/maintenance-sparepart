@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Services\AnalitikBiayaService;
 use App\Services\LaporanBulananExcel;
 use App\Services\LaporanBulananService;
+use App\Support\Ekspor;
 use Barryvdh\DomPDF\Facade\Pdf;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -37,24 +37,27 @@ class AnalitikController extends Controller
         ]);
     }
 
-    /** Laporan bulanan untuk Presdir: PDF (untuk dibaca/diteruskan) atau Excel (untuk ditelusuri). */
+    /** Laporan bulanan untuk Presdir: PDF (untuk dibaca/diteruskan), Excel (untuk ditelusuri) atau CSV (untuk diolah sistem lain). */
     public function laporanBulanan(Request $request, LaporanBulananService $bulanan, LaporanBulananExcel $excel)
     {
         $data = $request->validate([
             'bulan'  => ['required', 'in:' . implode(',', array_keys($bulanan->pilihanBulan()))],
-            'format' => ['required', 'in:pdf,xlsx'],
+            'format' => ['required', 'in:pdf,xlsx,csv'],
         ]);
         $isi = $bulanan->data($data['bulan']);
         $nama = 'Spare-Part-Report-' . $data['bulan'];
 
         if ($data['format'] === 'pdf') {
-            return Pdf::loadView('analitik.laporan-pdf', $isi)->setPaper('a4')->download($nama . '.pdf');
+            ini_set('memory_limit', '512M');   // dompdf: cadangan memori untuk laporan yang panjang
+            return Pdf::loadView('analitik.laporan-pdf', $isi)->setOption('enable_font_subsetting', true)->setPaper('a4')->download($nama . '.pdf');
         }
 
-        $buku = $excel->buat($isi);
+        // CSV: satu file per tabel (ringkasan, poin utama, tren, mesin, pembelian, restock, uang mengendap) dalam satu ZIP.
+        if ($data['format'] === 'csv') {
+            return Ekspor::unduhCsvZip($nama . '-CSV.zip', $excel->tabelCsv($isi));
+        }
 
-        return response()->streamDownload(fn () => (new Xlsx($buku))->save('php://output'), $nama . '.xlsx',
-            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+        return Ekspor::unduhXlsx($excel->buat($isi), $nama . '.xlsx');
     }
 
     /** Pilihan: fiscal year (Jul–Jun) yang punya data, plus jendela waktu umum. */

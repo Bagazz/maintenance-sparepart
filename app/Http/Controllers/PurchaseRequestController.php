@@ -8,7 +8,7 @@ use App\Services\PurchaseRequestExcel;
 use App\Services\PurchaseRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Support\Ekspor;
 
 /**
  * Pelacakan Purchase Request (khusus admin): dibuat dari Rekomendasi Pembelian, PO dicatat,
@@ -98,7 +98,7 @@ class PurchaseRequestController extends Controller
     }
 
     /** Formulir Excel PR (format sama dengan unduhan dari Rekomendasi Pembelian), memakai nomor PR ini. */
-    public function excel(PurchaseRequest $pr, PurchaseRequestExcel $excel)
+    public function excel(Request $request, PurchaseRequest $pr, PurchaseRequestExcel $excel)
     {
         $pakai = DB::table('inventory_transactions')->where('type', 'OUT')
             ->where('tanggal_transaksi', '>=', now()->subDays(AnalitikBiayaService::HARI_KEBUTUHAN)->toDateString())
@@ -123,8 +123,11 @@ class PurchaseRequestController extends Controller
             'dasar'   => __('Stock < usage in the last 90 days; suggested qty refills to :n months of demand.', ['n' => AnalitikBiayaService::BULAN_TARGET_STOK]),
         ]);
 
-        return response()->streamDownload(fn () => (new Xlsx($buku))->save('php://output'), $pr->kode . '.xlsx',
-            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+        if ($request->get('format') === 'csv') {
+            return Ekspor::unduhCsv($pr->kode . '.csv', $excel->header(), $excel->barisCsv($barang));
+        }
+
+        return Ekspor::unduhXlsx($buku, $pr->kode . '.xlsx');
     }
 
     /** Sisa barang PR (JSON) untuk mengisi formulir Penerimaan Barang. */

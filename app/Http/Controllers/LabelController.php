@@ -19,6 +19,8 @@ class LabelController extends Controller
         'kecil'  => [50, 25],
         'sedang' => [70, 35],
         'besar'  => [100, 50],
+        // 3 kolom per A4 (hemat kertas), jarak 2 mm antar label agar mudah digunting.
+        'tiga'   => [63, 33],
     ];
 
     public const SEMUA = 'semua';

@@ -75,6 +75,11 @@
             @if($perluMesin)
                 <div>
                     <label class="label" for="mesin">{{ __('Target machine') }}</label>
+                    {{-- Daftar mesin panjang (±120 dari ERP): ketik ID atau nama untuk menyaring pilihan. --}}
+                    <input type="search" class="input mb-2" placeholder="{{ __('Search machine: ID or name...') }}" autocomplete="off"
+                           oninput="const q = this.value.trim().toLowerCase(), s = document.getElementById('mesin'); let pertama = null;
+                                    for (const o of s.options) { if (!o.value) continue; const cocok = o.text.toLowerCase().includes(q); o.hidden = !cocok; if (cocok && !pertama) pertama = o; }
+                                    if (q && pertama && (s.selectedIndex < 1 || s.options[s.selectedIndex].hidden)) s.value = pertama.value;">
                     <select id="mesin" name="mesin" required class="input">
                         <option value="" disabled @selected(!old('mesin'))>{{ __('Choose machine...') }}</option>
                         @foreach($daftarMesin as $m)

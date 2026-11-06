@@ -2,110 +2,162 @@
 
 namespace App\Services;
 
+use App\Support\Ekspor;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-/** Laporan bulanan Presdir versi Excel: ringkasan + lembar rincian untuk ditelusuri lebih lanjut. */
+/**
+ * Laporan bulanan Presdir versi Excel (ringkasan + lembar rincian) dan CSV (satu file per tabel, dalam ZIP).
+ * Isi tabel didefinisikan sekali di tabelRincian() sehingga Excel dan CSV selalu sama.
+ */
 class LaporanBulananExcel
 {
-    private const BIRU = '004E92';
-    private const RP = '#,##0';
-
     public function __construct(private AnalitikBiayaService $a)
     {
     }
 
     public function buat(array $d): Spreadsheet
     {
-        $buku = new Spreadsheet();
-        $buku->getProperties()->setCreator('Spare Part Maintenance · PT Detpak Indonesia')
-            ->setTitle(__('Spare Part Monthly Report') . ' ' . $d['judul']);
-        $buku->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
+        $judulDok = __('Spare Part Monthly Report') . ' — ' . $d['judul'];
+        $buku = Ekspor::bukuBaru($judulDok);
 
-        $this->ringkasan($buku->getActiveSheet(), $d);
+        $this->ringkasan($buku->getActiveSheet(), $d, $judulDok);
 
-        $this->tabel($buku->createSheet(), __('12-month trend'), [__('Month'), __('Purchases'), __('Usage'), __('Purchases − usage'), __('Cumulative held')],
-            collect($d['tren'])->map(fn ($t) => [$t['label'], $t['beli'], $t['pakai'], $t['beli'] - $t['pakai'], $t['tertahan']])->all(),
-            [14, 18, 18, 18, 18], ['B', 'C', 'D', 'E'], true);
-
-        $this->tabel($buku->createSheet(), __('Machines'), ['#', __('Machine / Job'), __('Transactions'), 'Qty', __('Cost')],
-            $this->a->topJob($d['awal'], $d['akhir'], 50)->values()->map(fn ($m, $i) => [$i + 1, $m->job, (int) $m->frek, (int) $m->qty, (float) $m->rp])->all(),
-            [5, 34, 13, 10, 18], ['E'], true, [2]);
-
-        $this->tabel($buku->createSheet(), __('Purchases'), [__('Date'), __('Part No'), __('Description'), __('Supplier'), 'Qty', __('Value'), __('Stock at purchase'), __('Used since purchase'), __('Assessment')],
-            $d['kualitas']['baris']->map(fn ($b) => [
-                $b->tgl->format('Y-m-d'), $b->part_no, $b->deskripsi, $b->supplier, $b->qty, $b->rp,
-                $b->stok_saat_beli ?? '?', $b->pakai_sejak, __(AnalitikBiayaService::STATUS_BELI[$b->status][0]),
-            ])->values()->all(),
-            [12, 15, 44, 28, 8, 16, 12, 12, 16], ['F'], true, [2]);
-
-        $this->tabel($buku->createSheet(), __('Restock'), [__('Part No'), __('Description'), __('Bin'), __('Stock'), __('Used 90 days'), __('Suggested buy'), __('Last price (Rp)'), __('Estimated Rp')],
-            $this->a->queryPerluRestock()->orderByRaw('inventories.stock / p.pakai_90')->orderByDesc('p.pakai_90')->get()
-                ->map(fn ($b) => [$b->part_no, $b->deskripsi, $b->lokasi_rak, (int) $b->stock, (int) $b->pakai_90, (int) $b->saran_beli, (float) $b->harga_beli_terakhir, (float) $b->saran_rp])->all(),
-            [15, 44, 12, 9, 12, 12, 16, 16], ['G', 'H'], true, [1]);
-
-        $m = $d['mengendap'];
-        $mengendap = $m['dead_top']->map(fn ($x) => [__('Dead stock'), $x->part_no, $x->deskripsi, (int) $x->stock, (float) $x->rp])
-            ->concat($m['over_top']->map(fn ($x) => ['Overstock', $x->part_no, $x->deskripsi, (int) $x->stock, (float) $x->rp]))->all();
-        $this->tabel($buku->createSheet(), __('Idle money'), [__('Type'), __('Part No'), __('Description'), __('Stock'), __('Value')],
-            $mengendap, [14, 15, 48, 9, 16], ['E'], false, [2]);
+        foreach ($this->tabelRincian($d) as $t) {
+            $this->tabel($buku->createSheet(), $t, $d, $judulDok);
+        }
 
         $buku->setActiveSheetIndex(0);
 
         return $buku;
     }
 
-    private function ringkasan(Worksheet $s, array $d): void
+    /** Semua tabel untuk CSV: [nama => [header, baris]]. Nilai mentah (tanpa format) supaya bisa dihitung ulang. */
+    public function tabelCsv(array $d): array
     {
-        $s->setTitle(__('Summary'));
-        foreach (['A' => 38, 'B' => 20, 'C' => 20, 'D' => 20] as $k => $w) {
-            $s->getColumnDimension($k)->setWidth($w);
+        $hasil = [
+            __('Summary')          => [[__('Metric'), $d['judul'], $d['label_lalu'], __(':fy to date', ['fy' => $d['label_fy']])], $this->barisRingkasan($d, false)],
+            __('Key points this month') => [[__('Key point')], array_map(fn ($p) => [$p], $d['sorotan'])],
+        ];
+        foreach ($this->tabelRincian($d) as $t) {
+            $hasil[$t['judul']] = [$t['header'], $t['baris']];
         }
 
-        $s->setCellValue('A1', 'PT DETPAK INDONESIA · MAINTENANCE PAPER DIVISION');
-        $s->setCellValue('A2', __('Spare Part Monthly Report') . ' — ' . $d['judul'] . ($d['sebagian'] ? ' (' . __('to date') . ')' : ''));
-        $s->setCellValue('A3', __('Period :dari – :sampai · compared with :lalu and :fy', [
-            'dari' => $d['awal']->translatedFormat('d M Y'), 'sampai' => $d['akhir']->translatedFormat('d M Y'),
-            'lalu' => $d['label_lalu'], 'fy' => $d['label_fy'],
-        ]));
-        $s->getStyle('A1')->getFont()->setBold(true)->setSize(9)->getColor()->setRGB('64748B');
-        $s->getStyle('A2')->getFont()->setBold(true)->setSize(15)->getColor()->setRGB(self::BIRU);
-        $s->getStyle('A3')->getFont()->getColor()->setRGB('64748B');
+        return $hasil;
+    }
 
-        $s->setCellValue('A5', __('Key points this month'));
-        $s->getStyle('A5')->getFont()->setBold(true);
-        $r = 6;
+    /** Definisi lembar rincian: judul, header, baris, lebar kolom, kolom Rupiah, baris total, kolom teks (1-based). */
+    private function tabelRincian(array $d): array
+    {
+        $m = $d['mengendap'];
+
+        return [
+            [
+                'judul' => __('12-month trend'),
+                'header' => [__('Month'), __('Purchases'), __('Usage'), __('Purchases − usage'), __('Cumulative held')],
+                'baris' => collect($d['tren'])->map(fn ($t) => [$t['label'], (float) $t['beli'], (float) $t['pakai'], (float) ($t['beli'] - $t['pakai']), (float) $t['tertahan']])->all(),
+                'lebar' => [14, 18, 18, 18, 18], 'rp' => ['B', 'C', 'D', 'E'], 'total' => ['B', 'C', 'D'], 'teks' => [],
+            ],
+            [
+                'judul' => __('Machines'),
+                'header' => ['#', __('Machine / Job'), __('Transactions'), 'Qty', __('Cost')],
+                'baris' => $this->a->topJob($d['awal'], $d['akhir'], 50)->values()->map(fn ($m, $i) => [$i + 1, $m->job, (int) $m->frek, (int) $m->qty, (float) $m->rp])->all(),
+                'lebar' => [5, 40, 13, 10, 18], 'rp' => ['E'], 'total' => ['C', 'D', 'E'], 'teks' => [2],
+            ],
+            [
+                'judul' => __('Purchases'),
+                'header' => [__('Date'), __('Part No'), __('Description'), __('Supplier'), 'Qty', __('Value'), __('Stock at purchase'), __('Used since purchase'), __('Assessment')],
+                'baris' => $d['kualitas']['baris']->map(fn ($b) => [
+                    $b->tgl->format('Y-m-d'), (string) $b->part_no, $b->deskripsi, $b->supplier, (int) $b->qty, (float) $b->rp,
+                    $b->stok_saat_beli ?? '?', (int) $b->pakai_sejak, __(AnalitikBiayaService::STATUS_BELI[$b->status][0]),
+                ])->values()->all(),
+                'lebar' => [12, 15, 44, 28, 8, 16, 12, 12, 18], 'rp' => ['F'], 'total' => ['E', 'F'], 'teks' => [2],
+            ],
+            [
+                'judul' => __('Restock'),
+                'header' => [__('Part No'), __('Description'), __('Bin'), __('Stock'), __('Used 90 days'), __('Suggested buy'), __('Last price (Rp)'), __('Estimated Rp')],
+                'baris' => $this->a->queryPerluRestock()->orderByRaw('inventories.stock / p.pakai_90')->orderByDesc('p.pakai_90')->get()
+                    ->map(fn ($b) => [(string) $b->part_no, $b->deskripsi, $b->lokasi_rak, (int) $b->stock, (int) $b->pakai_90, (int) $b->saran_beli, (float) $b->harga_beli_terakhir, (float) $b->saran_rp])->all(),
+                'lebar' => [15, 44, 13, 9, 12, 12, 16, 16], 'rp' => ['G', 'H'], 'total' => ['F', 'H'], 'teks' => [1],
+            ],
+            [
+                'judul' => __('Idle money'),
+                'header' => [__('Type'), __('Part No'), __('Description'), __('Stock'), __('Value')],
+                'baris' => $m['dead_top']->map(fn ($x) => [__('Dead stock'), (string) $x->part_no, $x->deskripsi, (int) $x->stock, (float) $x->rp])
+                    ->concat($m['over_top']->map(fn ($x) => ['Overstock', (string) $x->part_no, $x->deskripsi, (int) $x->stock, (float) $x->rp]))->values()->all(),
+                'lebar' => [14, 15, 48, 9, 16], 'rp' => ['E'], 'total' => ['E'], 'teks' => [2],
+            ],
+        ];
+    }
+
+    /** Baris ringkasan; $rumus = true untuk Excel (baris "uang tertahan" memakai rumus). */
+    private function barisRingkasan(array $d, bool $rumus, int $barisPertama = 0): array
+    {
+        $tertahan = $rumus
+            ? ['=B' . $barisPertama . '-B' . ($barisPertama + 1), '=C' . $barisPertama . '-C' . ($barisPertama + 1), '=D' . $barisPertama . '-D' . ($barisPertama + 1)]
+            : [(float) $d['ini']['beli'] - $d['ini']['pakai'], (float) $d['lalu']['beli'] - $d['lalu']['pakai'], (float) $d['fy']['beli'] - $d['fy']['pakai']];
+
+        return [
+            [__('Purchases'), (float) $d['ini']['beli'], (float) $d['lalu']['beli'], (float) $d['fy']['beli']],
+            [__('Usage'), (float) $d['ini']['pakai'], (float) $d['lalu']['pakai'], (float) $d['fy']['pakai']],
+            [__('Money held (purchases − usage)'), ...$tertahan],
+            [__('Purchases to review'), (float) $d['ini']['berisiko'], null, null],
+            [__('Issued without kiosk scan'), (float) $d['kerugian']['erp_tanpa_scan_rp'], null, null],
+            [__('Missing from stock counts'), (float) $d['kerugian']['opname']['kurang_rp'], null, null],
+            [__('Restock needed now (estimated)'), (float) $d['restock']['rp'], null, null],
+            [__('Dead stock / not moving'), (float) $d['mengendap']['dead_rp'], null, null],
+            ['Overstock', (float) $d['mengendap']['over_rp'], null, null],
+        ];
+    }
+
+    private function keteranganKop(array $d): array
+    {
+        return [
+            __('Period :dari – :sampai · compared with :lalu and :fy', [
+                'dari' => $d['awal']->translatedFormat('d M Y'), 'sampai' => $d['akhir']->translatedFormat('d M Y'),
+                'lalu' => $d['label_lalu'], 'fy' => $d['label_fy'],
+            ]) . ($d['sebagian'] ? ' · ' . __('to date') : ''),
+            __('Generated :tgl', ['tgl' => now()->translatedFormat('d M Y H:i')]) . ' · ' . __('All amounts in Rupiah (Rp)'),
+        ];
+    }
+
+    private function ringkasan(Worksheet $s, array $d, string $judulDok): void
+    {
+        $s->setTitle(mb_substr(__('Summary'), 0, 31));
+        foreach (['A' => 40, 'B' => 20, 'C' => 20, 'D' => 20] as $k => $w) {
+            $s->getColumnDimension($k)->setWidth($w);
+        }
+        $s->setShowGridlines(false);
+
+        $r = Ekspor::kopExcel($s, $judulDok, $this->keteranganKop($d), 'D');
+
+        $s->setCellValue("A{$r}", __('Key points this month'));
+        $s->getStyle("A{$r}")->getFont()->setBold(true)->getColor()->setRGB(Ekspor::BIRU);
+        $r++;
         foreach ($d['sorotan'] as $poin) {
             $s->setCellValue("A{$r}", '• ' . $poin)->mergeCells("A{$r}:D{$r}");
-            $s->getStyle("A{$r}")->getAlignment()->setWrapText(true);
+            $s->getStyle("A{$r}")->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
             $s->getRowDimension($r)->setRowHeight(28);
             $r++;
         }
 
         $r++;
         $hdr = $r;
-        $s->fromArray(['', $d['judul'], $d['label_lalu'], __(':fy to date', ['fy' => $d['label_fy']])], null, "A{$hdr}");
-        $this->gayaHeader($s, "A{$hdr}:D{$hdr}");
-        $baris = [
-            [__('Purchases'), $d['ini']['beli'], $d['lalu']['beli'], $d['fy']['beli']],
-            [__('Usage'), $d['ini']['pakai'], $d['lalu']['pakai'], $d['fy']['pakai']],
-            [__('Money held (purchases − usage)'), '=B' . ($hdr + 1) . '-B' . ($hdr + 2), '=C' . ($hdr + 1) . '-C' . ($hdr + 2), '=D' . ($hdr + 1) . '-D' . ($hdr + 2)],
-            [__('Purchases to review'), $d['ini']['berisiko'], null, null],
-            [__('Issued without kiosk scan'), $d['kerugian']['erp_tanpa_scan_rp'], null, null],
-            [__('Missing from stock counts'), $d['kerugian']['opname']['kurang_rp'], null, null],
-            [__('Restock needed now (estimated)'), $d['restock']['rp'], null, null],
-            [__('Dead stock / not moving'), $d['mengendap']['dead_rp'], null, null],
-            ['Overstock', $d['mengendap']['over_rp'], null, null],
-        ];
+        $s->fromArray([__('Metric'), $d['judul'], $d['label_lalu'], __(':fy to date', ['fy' => $d['label_fy']])], null, "A{$hdr}");
+        Ekspor::gayaHeader($s, "A{$hdr}:D{$hdr}");
+        $s->getStyle("B{$hdr}:D{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $baris = $this->barisRingkasan($d, true, $hdr + 1);
         $s->fromArray($baris, null, 'A' . ($hdr + 1), true);
         $akhir = $hdr + count($baris);
-        $s->getStyle('B' . ($hdr + 1) . ":D{$akhir}")->getNumberFormat()->setFormatCode(self::RP);
-        $s->getStyle('A' . ($hdr + 3) . ':D' . ($hdr + 3))->getFont()->setBold(true);
-        $s->getStyle("A{$hdr}:D{$akhir}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('CBD5E1');
+        $s->getStyle('B' . ($hdr + 1) . ":D{$akhir}")->getNumberFormat()->setFormatCode(Ekspor::FORMAT_RP);
+        $s->getStyle('A' . ($hdr + 3) . ':D' . ($hdr + 3))->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF4FB']],
+        ]);
+        Ekspor::garisTabel($s, "A{$hdr}:D{$akhir}");
 
         if (!$d['cakupan']['cukup_tahun']) {
             $n = $akhir + 2;
@@ -113,60 +165,57 @@ class LaporanBulananExcel
             $s->getStyle("A{$n}")->getFont()->setItalic(true)->getColor()->setRGB('B45309');
         }
 
-        $s->getPageSetup()->setPaperSize(PageSetup::PAPERSIZE_A4)->setFitToWidth(1)->setFitToHeight(0);
+        Ekspor::cetakExcel($s, $judulDok, false);
     }
 
-    /** Satu lembar tabel: header biru, format Rupiah, filter, header dibekukan, baris total opsional. */
-    private function tabel(Worksheet $s, string $judul, array $header, array $baris, array $lebar, array $kolomRp, bool $total, array $kolomTeks = []): void
+    /** Satu lembar rincian: kop + logo, header biru, format Rupiah, filter, header dibekukan, baris total. */
+    private function tabel(Worksheet $s, array $t, array $d, string $judulDok): void
     {
-        $s->setTitle(mb_substr($judul, 0, 31));
-        $s->fromArray($header, null, 'A1');
-        $kolomAkhir = chr(ord('A') + count($header) - 1);
-        $this->gayaHeader($s, "A1:{$kolomAkhir}1");
-        foreach ($lebar as $i => $w) {
+        $s->setTitle(mb_substr($t['judul'], 0, 31));
+        $kolomAkhir = chr(ord('A') + count($t['header']) - 1);
+        foreach ($t['lebar'] as $i => $w) {
             $s->getColumnDimension(chr(ord('A') + $i))->setWidth($w);
         }
 
-        $r = 1;
-        foreach ($baris as $isi) {
+        $hdr = Ekspor::kopExcel($s, $t['judul'] . ' — ' . $d['judul'], $this->keteranganKop($d), $kolomAkhir);
+        $s->fromArray($t['header'], null, "A{$hdr}");
+        Ekspor::gayaHeader($s, "A{$hdr}:{$kolomAkhir}{$hdr}");
+
+        $r = $hdr;
+        foreach ($t['baris'] as $isi) {
             $r++;
             $s->fromArray($isi, null, "A{$r}", true);
             // Part no / nama mesin sebagai teks supaya angka panjang tidak berubah format.
-            foreach ($kolomTeks as $k) {
-                $sel = chr(ord('A') + $k - 1) . $r;
-                $s->setCellValueExplicit($sel, (string) $isi[$k - 1], DataType::TYPE_STRING);
+            foreach ($t['teks'] as $k) {
+                $s->setCellValueExplicit(chr(ord('A') + $k - 1) . $r, (string) $isi[$k - 1], DataType::TYPE_STRING);
             }
         }
-        $akhir = max(2, $r);
-        foreach ($kolomRp as $k) {
-            $s->getStyle("{$k}2:{$k}" . ($akhir + 1))->getNumberFormat()->setFormatCode(self::RP);
-        }
+        $pertama = $hdr + 1;
 
-        if ($total && $r > 1) {
-            $t = $r + 1;
-            $s->setCellValue("A{$t}", __('Total'));
-            foreach ($kolomRp as $k) {
-                $s->setCellValue("{$k}{$t}", "=SUM({$k}2:{$k}{$r})");
+        if ($r === $hdr) {
+            $s->setCellValue("A{$pertama}", __('No data for this period.'))->mergeCells("A{$pertama}:{$kolomAkhir}{$pertama}");
+            $s->getStyle("A{$pertama}")->getFont()->setItalic(true)->getColor()->setRGB(Ekspor::ABU);
+            Ekspor::garisTabel($s, "A{$hdr}:{$kolomAkhir}{$pertama}");
+        } else {
+            foreach ($t['rp'] as $k) {
+                $s->getStyle("{$k}{$pertama}:{$k}" . ($r + 1))->getNumberFormat()->setFormatCode(Ekspor::FORMAT_RP);
             }
-            $s->getStyle("A{$t}:{$kolomAkhir}{$t}")->applyFromArray([
+            $t2 = $r + 1;
+            $s->setCellValue("A{$t2}", __('Total'));
+            foreach ($t['total'] as $k) {
+                $s->setCellValue("{$k}{$t2}", "=SUM({$k}{$pertama}:{$k}{$r})");
+                $s->getStyle("{$k}{$t2}")->getNumberFormat()->setFormatCode(Ekspor::FORMAT_RP);
+            }
+            $s->getStyle("A{$t2}:{$kolomAkhir}{$t2}")->applyFromArray([
                 'font' => ['bold' => true],
-                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E8F0F8']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF4FB']],
             ]);
-        }
-        if ($r === 1) {
-            $s->setCellValue('A2', __('No data.'));
+            Ekspor::garisTabel($s, "A{$hdr}:{$kolomAkhir}{$t2}");
+            $s->setAutoFilter("A{$hdr}:{$kolomAkhir}{$r}");
+            $s->getStyle("A{$pertama}:{$kolomAkhir}{$r}")->getAlignment()->setVertical(Alignment::VERTICAL_TOP);
         }
 
-        $s->freezePane('A2');
-        $s->setAutoFilter("A1:{$kolomAkhir}{$akhir}");
-        $s->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)->setPaperSize(PageSetup::PAPERSIZE_A4)->setFitToWidth(1)->setFitToHeight(0);
-    }
-
-    private function gayaHeader(Worksheet $s, string $rentang): void
-    {
-        $s->getStyle($rentang)->applyFromArray([
-            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::BIRU]],
-        ]);
+        $s->freezePane('A' . ($hdr + 1));
+        Ekspor::cetakExcel($s, $judulDok, true, $hdr);
     }
 }

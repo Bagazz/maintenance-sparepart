@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
+use App\Support\Ekspor;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 
 /**
  * Purchase Request (Excel) dari daftar Perlu Restock.
@@ -49,16 +49,42 @@ class PurchaseRequestExcel
         };
     }
 
-    public function buat(Collection $barang, array $info): Spreadsheet
+    /** Judul kolom (sama untuk Excel & CSV). */
+    public function header(): array
+    {
+        return [__('No'), __('Part No'), __('Description'), __('Bin'), __('Stock'), __('Used 90 days'), __('Lasts (days)'), __('Priority'),
+            __('Suggested qty'), __('Order qty'), __('Last price (Rp)'), __('Est. total (Rp)'), __('Last supplier'), __('Last purchase'), __('Notes')];
+    }
+
+    /** Baris data mentah (sama untuk Excel & CSV). Kolom terakhir = warna prioritas (khusus Excel, dibuang di CSV). */
+    public function baris(Collection $barang): array
     {
         $pembelian = $this->pembelianTerakhir($barang->pluck('id'));
 
-        $buku = new Spreadsheet();
-        $buku->getProperties()->setCreator('Spare Part Maintenance · PT Detpak Indonesia')->setTitle($info['nomor']);
+        return $barang->values()->map(function ($b, $i) use ($pembelian) {
+            [$label, $warna, $hari] = self::prioritas($b);
+            $beli = $pembelian[$b->id] ?? null;
+
+            return [
+                $i + 1, (string) $b->part_no, $b->deskripsi, $b->lokasi_rak, (int) $b->stock, (int) $b->pakai_90, $hari, $label,
+                (int) $b->saran_beli, (int) $b->saran_beli, (float) $b->harga_beli_terakhir, (float) $b->saran_beli * (float) $b->harga_beli_terakhir,
+                $beli->supplier ?? '-', $beli->tanggal ?? '-', '', '_warna' => $warna,
+            ];
+        })->all();
+    }
+
+    /** CSV: baris data tanpa kolom khusus Excel. */
+    public function barisCsv(Collection $barang): array
+    {
+        return array_map(fn ($r) => array_values(array_diff_key($r, ['_warna' => 1])), $this->baris($barang));
+    }
+
+    public function buat(Collection $barang, array $info): Spreadsheet
+    {
+        $buku = Ekspor::bukuBaru($info['nomor']);
         $s = $buku->getActiveSheet();
         $s->setTitle('Purchase Request');
-        $s->getParent()->getDefaultStyle()->getFont()->setName('Arial')->setSize(10);
-
+        $s->setShowGridlines(false);
         $kolom = [
             'A' => [__('No'), 5], 'B' => [__('Part No'), 16], 'C' => [__('Description'), 44], 'D' => [__('Bin'), 12],
             'E' => [__('Stock'), 8], 'F' => [__('Used 90 days'), 10], 'G' => [__('Lasts (days)'), 10], 'H' => [__('Priority'), 10],
@@ -69,12 +95,8 @@ class PurchaseRequestExcel
             $s->getColumnDimension($k)->setWidth($lebar);
         }
 
-        // ---------- Kop ----------
-        $s->setCellValue('A1', 'PT DETPAK INDONESIA');
-        $s->setCellValue('A2', 'PURCHASE REQUEST — ' . mb_strtoupper(__('Maintenance Spare Parts')));
-        $s->mergeCells('A1:O1')->mergeCells('A2:O2');
-        $s->getStyle('A1')->getFont()->setBold(true)->setSize(12)->getColor()->setRGB(self::BIRU);
-        $s->getStyle('A2')->getFont()->setBold(true)->setSize(14);
+        // ---------- Kop (logo Detpak) ----------
+        $mulai = Ekspor::kopExcel($s, 'PURCHASE REQUEST — ' . mb_strtoupper(__('Maintenance Spare Parts')), [], 'O');
 
         $kop = [
             [__('PR No'), $info['nomor'], __('Department'), 'Maintenance — Paper Division'],
@@ -82,7 +104,7 @@ class PurchaseRequestExcel
             [__('Warehouse'), 'M03 — Maintenance Store', __('Basis'), $info['dasar']],
         ];
         foreach ($kop as $i => [$l1, $v1, $l2, $v2]) {
-            $r = 4 + $i;
+            $r = $mulai + $i;
             $s->setCellValue("A$r", $l1)->mergeCells("A$r:B$r");
             $s->setCellValueExplicit("C$r", $v1, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $s->setCellValue("E$r", $l2)->mergeCells("E$r:G$r");
@@ -92,7 +114,7 @@ class PurchaseRequestExcel
         }
 
         // ---------- Tabel ----------
-        $hdr = 8;
+        $hdr = $mulai + count($kop) + 1;
         foreach ($kolom as $k => [$judul]) {
             $s->setCellValue("{$k}{$hdr}", $judul);
         }
@@ -104,19 +126,17 @@ class PurchaseRequestExcel
         $s->getRowDimension($hdr)->setRowHeight(30);
 
         $r = $hdr;
-        foreach ($barang->values() as $i => $b) {
+        foreach ($this->baris($barang) as $isi) {
             $r++;
-            [$label, $warna, $hari] = self::prioritas($b);
-            $beli = $pembelian[$b->id] ?? null;
-            $s->fromArray([
-                $i + 1, null, $b->deskripsi, $b->lokasi_rak, (int) $b->stock, (int) $b->pakai_90, $hari, $label,
-                (int) $b->saran_beli, (int) $b->saran_beli, (float) $b->harga_beli_terakhir, "=J{$r}*K{$r}",
-                $beli->supplier ?? '-', $beli->tanggal ?? '-', null,
-            ], null, "A{$r}", true); // true: angka 0 (stok habis) tetap ditulis, bukan dikosongkan
+            $warna = $isi['_warna'];
+            $nilai = array_values(array_diff_key($isi, ['_warna' => 1]));
+            $nilai[11] = "=J{$r}*K{$r}";   // total baris = rumus, ikut berubah bila Qty order diubah
+            $nilai[14] = null;
+            $s->fromArray($nilai, null, "A{$r}", true); // true: angka 0 (stok habis) tetap ditulis, bukan dikosongkan
             // Part no disimpan sebagai teks supaya nol di depan / angka panjang tidak berubah.
-            $s->setCellValueExplicit("B{$r}", (string) $b->part_no, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $s->setCellValueExplicit("B{$r}", (string) $nilai[1], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $s->getStyle("H{$r}")->getFont()->setBold(true)->getColor()->setRGB($warna);
-            if ($b->stock <= 0) {
+            if ($nilai[4] <= 0) {
                 $s->getStyle("E{$r}")->getFont()->setBold(true)->getColor()->setRGB(self::MERAH);
             }
         }
@@ -175,10 +195,7 @@ class PurchaseRequestExcel
         // ---------- Tampilan & cetak ----------
         $s->freezePane('D' . ($hdr + 1));
         $s->setAutoFilter("A{$hdr}:O{$akhir}");
-        $s->getPageSetup()->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)->setPaperSize(PageSetup::PAPERSIZE_A4)
-            ->setFitToWidth(1)->setFitToHeight(0)->setRowsToRepeatAtTopByStartAndEnd($hdr, $hdr);
-        $s->getPageMargins()->setTop(0.5)->setBottom(0.5)->setLeft(0.4)->setRight(0.4);
-        $s->getHeaderFooter()->setOddFooter('&L' . $info['nomor'] . '&RPage &P / &N');
+        Ekspor::cetakExcel($s, 'Purchase Request ' . $info['nomor'], true, $hdr);
         $s->setSelectedCell('J' . ($hdr + 1));
 
         return $buku;
