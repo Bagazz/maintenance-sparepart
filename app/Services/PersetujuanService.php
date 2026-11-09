@@ -81,6 +81,7 @@ class PersetujuanService
                 'kode'      => PermintaanAmbil::kodeBaru(),
                 'karyawan_id' => $karyawan?->id,
                 'peminjam'  => $karyawan?->nama ?? auth()->user()->name,
+                'pola'      => $karyawan?->polaEfektif(session('pola_sesi')),
                 'status'    => 'menunggu',
             ]);
 
@@ -118,7 +119,7 @@ class PersetujuanService
                 throw new \RuntimeException(__('Request :kode was already decided.', ['kode' => $p->kode]));
             }
             foreach ($p->items as $it) {
-                $this->pengambilan->catat($it->part_no, $it->jumlah, $it->mesin, $p->karyawan, $it->no_pm, $p->kode, $p->id);
+                $this->pengambilan->catat($it->part_no, $it->jumlah, $it->mesin, $p->karyawan, $it->no_pm, $p->kode, $p->id, $p->pola, $p->created_at);
             }
             $p->update(['status' => 'disetujui', 'diputus_oleh' => auth()->user()->name, 'diputus_at' => now()]);
         });

@@ -63,7 +63,8 @@
                                 <p class="text-xs font-semibold text-slate-500">
                                     @if($k->nomor_kartu)<span class="font-mono text-slate-700">{{ __('No.') }} {{ $k->nomor_kartu }}</span> · @endif
                                     @if($k->bagian){{ $k->bagian }} · @endif
-                                    @if($k->shift){{ $k->shift }}@unless($k->shift_minggu_ini) <span class="text-amber-700">({{ __('not confirmed this week') }})</span>@endunless · @endif
+                                    <span @class(['text-slate-500', 'font-bold text-amber-700' => $k->non_shift])>{{ __($k->pola_kerja) }}</span>@unless($k->boleh_ganti_pola) <span class="text-slate-400">({{ __('locked') }})</span>@endunless ·
+                                    @if($k->ganti_pola_30)<span class="font-bold text-amber-700" title="{{ __('Take-outs in the last 30 days where the technician chose a different work pattern') }}">{{ __(':n× own pattern (30 days)', ['n' => $k->ganti_pola_30]) }}</span> · @endif
                                     {{ __(':n transactions', ['n' => $k->jumlah_transaksi]) }}
                                 </p>
                                 <p class="mt-1">
@@ -86,7 +87,7 @@
                                 <button type="button" class="btn-ghost px-3 py-1.5 text-xs"
                                         @click="pinUntuk = @js(['nama' => $k->nama, 'ada' => $k->punya_pin, 'url' => route('karyawan.pin', $k)])">{{ $k->punya_pin ? __('Reset password') : __('Set password') }}</button>
                                 <button type="button" class="btn-ghost px-3 py-1.5 text-xs"
-                                        @click="edit = @js(['id' => $k->id, 'nomor_kartu' => $k->nomor_kartu, 'nama' => $k->nama, 'bagian' => $k->bagian, 'shift' => $k->shift, 'url' => route('karyawan.update', $k)])">{{ __('Edit') }}</button>
+                                        @click="edit = @js(['id' => $k->id, 'nomor_kartu' => $k->nomor_kartu, 'nama' => $k->nama, 'bagian' => $k->bagian, 'shift' => $k->shift, 'boleh_ganti_pola' => $k->boleh_ganti_pola, 'url' => route('karyawan.update', $k)])">{{ __('Edit') }}</button>
                                 <form method="POST" action="{{ route('karyawan.toggle', $k) }}">
                                     @csrf
                                     <button class="btn-ghost px-3 py-1.5 text-xs {{ $k->aktif ? 'hover:text-accent-600' : '' }}">{{ $k->aktif ? __('Deactivate') : __('Activate') }}</button>
@@ -136,20 +137,24 @@
                         <input id="bagian" name="bagian" list="daftar-jabatan" value="{{ old('bagian') }}" class="input" placeholder="{{ __('e.g. Mechanical Technician') }}">
                     </div>
                     <div>
-                        <label class="label" for="shift">Shift</label>
+                        <label class="label" for="shift">{{ __('Work pattern') }}</label>
                         <select id="shift" name="shift" class="input">
-                            <option value="">-</option>
-                            @foreach(['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'] as $s)<option @selected(old('shift') === $s)>{{ $s }}</option>@endforeach
+                            @foreach(\App\Models\Karyawan::POLA as $s)<option value="{{ $s }}" @selected(old('shift', 'Shift') === $s)>{{ __($s) }}</option>@endforeach
                         </select>
                     </div>
                 </div>
+                <input type="hidden" name="boleh_ganti_pola" value="0">
+                <label class="flex items-start gap-2 text-xs text-slate-600">
+                    <input type="checkbox" name="boleh_ganti_pola" value="1" checked class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600">
+                    <span>{{ __('May switch Shift / Non-shift at the kiosk (marked in the history)') }}</span>
+                </label>
                 <button class="btn-primary w-full">{{ __('Register') }}</button>
             </form>
 
             <form method="POST" action="{{ route('karyawan.import') }}" enctype="multipart/form-data" class="card space-y-3 p-5" x-data="{ nama: '' }">
                 @csrf
                 <p class="font-bold text-slate-800">{{ __('Bulk import') }}</p>
-                <p class="text-xs text-slate-500">{{ __('Excel/CSV file, first row is the header:') }} <span class="font-mono font-bold">Nama | No ID | Jabatan | Shift</span>. {{ __('"No ID" is optional. Existing names will be updated. The sheet that has a "Nama" column is used.') }}</p>
+                <p class="text-xs text-slate-500">{{ __('Excel/CSV file, first row is the header:') }} <span class="font-mono font-bold">Nama | No ID | Jabatan | Shift</span> ({{ __('Shift / Non-shift') }}). {{ __('"No ID" is optional. Existing names will be updated. The sheet that has a "Nama" column is used.') }}</p>
                 <label class="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 p-5 text-center transition hover:border-brand-400 hover:bg-brand-50/40">
                     <span class="text-sm font-bold text-brand-600" x-text="nama || @js(__('Choose .xlsx / .csv file'))"></span>
                     <input type="file" name="file" accept=".xlsx,.xls,.csv" class="hidden" required @change="nama = $event.target.files[0]?.name">
@@ -206,13 +211,17 @@
                     <input name="bagian" list="daftar-jabatan" :value="edit?.bagian" class="input">
                 </div>
                 <div>
-                    <label class="label">Shift</label>
+                    <label class="label">{{ __('Work pattern') }}</label>
                     <select name="shift" class="input">
-                        <option value="">-</option>
-                        @foreach(['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'] as $s)<option :selected="edit?.shift === '{{ $s }}'">{{ $s }}</option>@endforeach
+                        @foreach(\App\Models\Karyawan::POLA as $s)<option value="{{ $s }}" :selected="(edit?.shift || 'Shift') === '{{ $s }}'">{{ __($s) }}</option>@endforeach
                     </select>
                 </div>
             </div>
+            <input type="hidden" name="boleh_ganti_pola" value="0">
+            <label class="flex items-start gap-2 text-sm text-slate-600">
+                <input type="checkbox" name="boleh_ganti_pola" value="1" :checked="edit?.boleh_ganti_pola !== false" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600">
+                <span>{{ __('May switch Shift / Non-shift at the kiosk (marked in the history). Untick to lock this employee to the work pattern above.') }}</span>
+            </label>
             <div class="flex gap-2 pt-2">
                 <button type="button" class="btn-ghost flex-1" @click="edit = null">{{ __('Cancel') }}</button>
                 <button class="btn-primary flex-1">{{ __('Save') }}</button>

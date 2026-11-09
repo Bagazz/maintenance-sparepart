@@ -74,7 +74,7 @@ class LaporanBulananExcel
                     $b->tgl->format('Y-m-d'), (string) $b->part_no, $b->deskripsi, $b->supplier, (int) $b->qty, (float) $b->rp,
                     $b->stok_saat_beli ?? '?', (int) $b->pakai_sejak, __(AnalitikBiayaService::STATUS_BELI[$b->status][0]),
                 ])->values()->all(),
-                'lebar' => [12, 15, 44, 28, 8, 16, 12, 12, 18], 'rp' => ['F'], 'total' => ['E', 'F'], 'teks' => [2],
+                'lebar' => [13, 15, 44, 28, 8, 16, 12, 12, 18], 'rp' => ['F'], 'total' => ['E', 'F'], 'teks' => [2], 'tanggal' => ['A'],
             ],
             [
                 'judul' => __('Restock'),
@@ -140,7 +140,8 @@ class LaporanBulananExcel
         foreach ($d['sorotan'] as $poin) {
             $s->setCellValue("A{$r}", '• ' . $poin)->mergeCells("A{$r}:D{$r}");
             $s->getStyle("A{$r}")->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
-            $s->getRowDimension($r)->setRowHeight(28);
+            // Sel gabungan tidak menyesuaikan tinggi sendiri: tinggi = jumlah baris teks (±95 huruf per baris di A:D).
+            $s->getRowDimension($r)->setRowHeight(max(1, (int) ceil(mb_strlen('• ' . $poin) / 95)) * 13.5 + 3);
             $r++;
         }
 
@@ -158,6 +159,7 @@ class LaporanBulananExcel
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF4FB']],
         ]);
         Ekspor::garisTabel($s, "A{$hdr}:D{$akhir}");
+        Ekspor::tabelExcel($s, "A{$hdr}:D{$akhir}", 'TabelRingkasan');
 
         if (!$d['cakupan']['cukup_tahun']) {
             $n = $akhir + 2;
@@ -189,6 +191,11 @@ class LaporanBulananExcel
             foreach ($t['teks'] as $k) {
                 $s->setCellValueExplicit(chr(ord('A') + $k - 1) . $r, (string) $isi[$k - 1], DataType::TYPE_STRING);
             }
+            // Tanggal sebagai tanggal Excel (bisa diurutkan/difilter), tampil "02 Sep 2026".
+            foreach ($t['tanggal'] ?? [] as $k) {
+                $s->setCellValue("{$k}{$r}", \PhpOffice\PhpSpreadsheet\Shared\Date::stringToExcel($s->getCell("{$k}{$r}")->getValue()));
+                $s->getStyle("{$k}{$r}")->getNumberFormat()->setFormatCode('dd mmm yyyy');
+            }
         }
         $pertama = $hdr + 1;
 
@@ -211,8 +218,9 @@ class LaporanBulananExcel
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EEF4FB']],
             ]);
             Ekspor::garisTabel($s, "A{$hdr}:{$kolomAkhir}{$t2}");
-            $s->setAutoFilter("A{$hdr}:{$kolomAkhir}{$r}");
-            $s->getStyle("A{$pertama}:{$kolomAkhir}{$r}")->getAlignment()->setVertical(Alignment::VERTICAL_TOP);
+            Ekspor::tabelExcel($s, "A{$hdr}:{$kolomAkhir}{$r}", 'Tabel' . Ekspor::slug($t['judul']));   // tabel otomatis: filter tiap kolom, baris berselang warna
+            // Teks panjang (deskripsi, pemasok) turun baris di dalam kolomnya — tidak terpotong kolom sebelah.
+            $s->getStyle("A{$pertama}:{$kolomAkhir}{$r}")->getAlignment()->setVertical(Alignment::VERTICAL_TOP)->setWrapText(true);
         }
 
         $s->freezePane('A' . ($hdr + 1));

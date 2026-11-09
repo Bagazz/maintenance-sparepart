@@ -20,7 +20,7 @@ class KaryawanController extends Controller
         $status = $request->get('status', 'semua');
 
         $karyawan = Karyawan::query()
-            ->withCount(['historyLogs as jumlah_transaksi'])
+            ->withCount(['historyLogs as jumlah_transaksi', 'historyLogs as ganti_pola_30' => fn ($h) => $h->where('shift_manual', true)->where('created_at', '>=', now()->subDays(30))])
             ->when($q !== '', fn ($qr) => $qr->where(fn ($s) => $s
                 ->where('nama', 'like', "%$q%")
                 ->orWhere('nomor_kartu', 'like', "%$q%")
@@ -99,8 +99,9 @@ class KaryawanController extends Controller
             // Nama = nama login, jadi wajib unik (dibandingkan setelah dirapikan ke HURUF BESAR).
             'nama'        => ['required', 'string', 'max:255', Rule::unique('karyawans', 'nama')->ignore($karyawan?->id)],
             'bagian'      => ['nullable', 'string', 'max:100'],
-            'shift'       => ['nullable', Rule::in(Karyawan::SHIFT)],
+            'shift'       => ['nullable', Rule::in(Karyawan::POLA)],
             'aktif'       => ['nullable', 'boolean'],
+            'boleh_ganti_pola' => ['nullable', 'boolean'],
         ];
     }
 
@@ -121,8 +122,8 @@ class KaryawanController extends Controller
             ? Karyawan::normalNomor($data['nomor_kartu']) : null;
         $data['nama'] = Karyawan::normalNama($data['nama']);
         $data['aktif'] = $request->boolean('aktif', true);
-        // Shift yang diisi Kepala Spare Part dianggap sudah pasti untuk minggu ini.
-        $data['shift_dikonfirmasi_at'] = !empty($data['shift']) ? now() : null;
+        $data['shift'] = $data['shift'] ?? 'Shift';
+        $data['boleh_ganti_pola'] = $request->boolean('boleh_ganti_pola', true);
 
         return $data;
     }
@@ -141,9 +142,6 @@ class KaryawanController extends Controller
         $request->merge(['nomor_kartu' => Karyawan::normalNomor($request->nomor_kartu) ?: null, 'nama' => Karyawan::normalNama($request->nama)]);
         $data = $this->rapikan($request->validate($this->aturan($karyawan)), $request);
         unset($data['aktif']); // status aktif hanya diubah lewat tombol Aktifkan/Nonaktifkan
-        if (($data['shift'] ?? null) === $karyawan->shift) {
-            unset($data['shift_dikonfirmasi_at']); // shift tidak diubah: konfirmasi teknisi tetap berlaku
-        }
         $karyawan->update($data);
 
         return back()->with('success', __('Data for :nama updated.', ['nama' => $karyawan->nama]));
@@ -213,10 +211,8 @@ class KaryawanController extends Controller
                     continue;
                 }
 
-                $shift = $kol['shift'] !== null ? trim((string) ($r[$kol['shift']] ?? '')) : null;
-                if ($shift !== null && preg_match('/^[123]$/', $shift)) {
-                    $shift = 'Shift ' . $shift;
-                }
+                $shift = $kol['shift'] !== null ? Karyawan::normalPola((string) ($r[$kol['shift']] ?? '')) : null;
+
 
                 $k = ($nomor !== '' ? Karyawan::where('nomor_kartu', $nomor)->first() : null)
                     ?? Karyawan::firstOrNew(['nama' => $nama]);
@@ -225,7 +221,7 @@ class KaryawanController extends Controller
                     'nama'        => $nama,
                     'nomor_kartu' => $nomor !== '' ? $nomor : $k->nomor_kartu,
                     'bagian' => $kol['bagian'] !== null ? (self::rapikanJabatan($r[$kol['bagian']] ?? '') ?: null) : $k->bagian,
-                    'shift'  => in_array($shift, Karyawan::SHIFT, true) ? $shift : $k->shift,
+                    'shift'  => $shift ?? $k->shift ?? 'Shift',
                     'aktif'  => true,
                 ])->save();
 

@@ -61,7 +61,7 @@ Route::middleware(['auth', 'role:admin,user'])->group(function () {
     // Teknisi login dengan nama + password di halaman login. Sesi berakhir -> akun kiosk keluar ke halaman login.
     Route::get('/inventory/pilih-peminjam', [InventoryController::class, 'pilihPeminjam'])->name('inventory.pilih-peminjam');
     Route::get('/inventory/ganti-peminjam', [InventoryController::class, 'gantiPeminjam'])->name('inventory.ganti-peminjam');
-    Route::post('/inventory/shift', [InventoryController::class, 'aturShift'])->name('inventory.shift');
+    Route::post('/inventory/pola', [InventoryController::class, 'aturPola'])->name('inventory.pola');
 
     // PAGE 2: pencarian barang (tetap 1 menu "Inventory")
     Route::post('/inventory/pinjam', [InventoryController::class, 'pinjam'])->name('inventory.pinjam');
@@ -78,6 +78,7 @@ Route::middleware(['auth', 'role:admin,user'])->group(function () {
 
     // Pengembalian
     Route::get('/pengembalian', [PengembalianController::class, 'index'])->name('pengembalian.index');
+    Route::get('/pengembalian/export', [PengembalianController::class, 'ekspor'])->name('pengembalian.export');
     Route::post('/pengembalian/{history}', [PengembalianController::class, 'kembalikan'])->name('pengembalian.kembalikan');
 
     // Halaman profil bawaan Breeze (ubah email/password, hapus akun) sengaja TIDAK diaktifkan:
@@ -100,6 +101,7 @@ Route::middleware(['auth', 'role:admin,viewer'])->group(function () {
     Route::get('/history/suggest', [HistoryController::class, 'suggest'])->name('history.suggest');
     Route::get('/history/export-pdf', [HistoryController::class, 'exportPdf'])->name('history.export-pdf');
     Route::get('/history/export-csv', [HistoryController::class, 'exportCsv'])->name('history.export-csv');
+    Route::get('/history/export-xlsx', [HistoryController::class, 'exportXlsx'])->name('history.export-xlsx');
     Route::get('/history/mesin', [HistoryController::class, 'daftarMesin'])->name('history.mesin');
     Route::get('/history/operator', [HistoryController::class, 'daftarOperator'])->name('history.operator');
     Route::get('/rekonsiliasi', [RekonsiliasiController::class, 'index'])->name('rekonsiliasi.index');

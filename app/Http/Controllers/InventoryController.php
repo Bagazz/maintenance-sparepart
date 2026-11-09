@@ -20,7 +20,7 @@ class InventoryController extends Controller
     /** Sesi teknisi di kiosk berakhir otomatis bila tidak ada aktivitas selama ini. */
     private const BATAS_SESI_MENIT = 10;
 
-    private const SESI = ['karyawan_id', 'peminjam_nama', 'karyawan_sejak'];
+    private const SESI = ['karyawan_id', 'peminjam_nama', 'karyawan_sejak', 'pola_sesi'];
 
 
     /**
@@ -68,18 +68,23 @@ class InventoryController extends Controller
         return $this->keluarKiosk($request, session('error') ?? __('Session ended. Sign in with your name and password.'), session()->has('error') ? 'error' : 'status');
     }
 
-    /** Teknisi memastikan / mengganti shift-nya minggu ini (Kepala Spare Part tetap bisa mengatur di menu Karyawan). */
-    public function aturShift(Request $request)
+    /**
+     * Teknisi memilih Shift / Non-shift untuk sesinya. Pak Nardi menentukan bawaan dan bisa mengunci
+     * karyawan tertentu (menu Karyawan); pengambilan dengan pilihan berbeda dari bawaan ditandai di riwayat.
+     */
+    public function aturPola(Request $request)
     {
         $karyawan = $this->karyawanSesi();
         if (!$karyawan) {
             return redirect()->route('inventory.pilih-peminjam');
         }
+        if (!$karyawan->boleh_ganti_pola) {
+            return back()->with('error', __('Your work pattern is set by the spare part head and cannot be changed here.'));
+        }
+        $pola = $request->validate(['pola' => ['required', \Illuminate\Validation\Rule::in(Karyawan::POLA)]])['pola'];
+        session(['pola_sesi' => $pola]);
 
-        $data = $request->validate(['shift' => ['required', \Illuminate\Validation\Rule::in(Karyawan::SHIFT)]]);
-        $karyawan->aturShift($data['shift']);
-
-        return back()->with('success', __('Your shift this week: :shift.', ['shift' => $data['shift']]));
+        return back()->with('success', __('Work pattern for this session: :pola.', ['pola' => __($pola)]));
     }
 
     public function gantiPeminjam(Request $request)
@@ -322,7 +327,7 @@ class InventoryController extends Controller
      */
     private function catatPengambilan(string $partNo, int $jumlah, string $mesin, ?Karyawan $karyawan, ?string $noPm = null): Inventory
     {
-        return app(PengambilanService::class)->catat($partNo, $jumlah, $mesin, $karyawan, $noPm);
+        return app(PengambilanService::class)->catat($partNo, $jumlah, $mesin, $karyawan, $noPm, pola: session('pola_sesi'));
     }
 
     public function pinjam(Request $request)
@@ -332,11 +337,6 @@ class InventoryController extends Controller
 
         if (!$isAdmin && !$karyawan) {
             return redirect()->route('inventory.pilih-peminjam')->with('error', __('Session ended. Sign in with your name and password.'));
-        }
-
-        // Sama seperti konfirmasi keranjang: shift minggu ini wajib dipastikan dulu.
-        if ($karyawan && !$karyawan->shift_minggu_ini) {
-            return back()->with('error', __('Confirm your shift for this week first (at the top of the page).'))->withInput();
         }
 
         $request->validate([
@@ -617,11 +617,6 @@ class InventoryController extends Controller
 
         if (empty($keranjang)) {
             return back()->with('error', __('The cart is still empty.'));
-        }
-
-        // Shift bergilir tiap minggu: teknisi wajib memastikan shift-nya dulu.
-        if ($karyawan && !$karyawan->shift_minggu_ini) {
-            return back()->with('error', __('Confirm your shift for this week first (at the top of the page).'));
         }
 
         $request->validate([

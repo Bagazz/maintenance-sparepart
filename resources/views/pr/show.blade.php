@@ -31,7 +31,7 @@
                 <p class="font-bold text-slate-800">{{ __(':n parts', ['n' => $pr->items->count()]) }}</p>
                 <div class="flex gap-2">
                     <a href="{{ route('pr.excel', $pr) }}" class="btn-ghost px-3 py-1.5 text-xs">{{ __('Download Excel') }}</a>
-                    <a href="{{ route('pr.excel', [$pr, 'format' => 'csv']) }}" class="btn-ghost px-3 py-1.5 text-xs">CSV</a>
+                    <a href="{{ route('pr.excel', [$pr, 'format' => 'csv']) }}" class="btn-ghost px-3 py-1.5 text-xs" title="{{ __('CSV = raw data for other systems (no logo or formatting). For a neat file to read or print, use Excel or PDF.') }}">CSV</a>
                 </div>
             </div>
             <div class="overflow-x-auto">

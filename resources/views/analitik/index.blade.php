@@ -60,7 +60,7 @@
         <div class="flex gap-2">
             <button name="format" value="pdf" class="btn-primary flex-1 whitespace-nowrap">PDF</button>
             <button name="format" value="xlsx" class="btn-success flex-1 whitespace-nowrap">Excel</button>
-            <button name="format" value="csv" class="btn-ghost flex-1 whitespace-nowrap" title="{{ __('CSV files (one per table) in a ZIP') }}">CSV</button>
+            <button name="format" value="csv" class="btn-ghost flex-1 whitespace-nowrap" title="{{ __('CSV files (one per table) in a ZIP') }} — {{ __('CSV = raw data for other systems (no logo or formatting). For a neat file to read or print, use Excel or PDF.') }}">CSV</button>
         </div>
     </form>
 

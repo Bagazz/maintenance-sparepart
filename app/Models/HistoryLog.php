@@ -10,7 +10,7 @@ class HistoryLog extends Model
 
     protected $fillable = [
         'part_no', 'item_name', 'machine', 'operator', 'peminjam',
-        'aksi', 'jumlah', 'qty_returned', 'source_ref', 'karyawan_id', 'no_pm', 'kode_pengambilan',
+        'aksi', 'jumlah', 'qty_returned', 'source_ref', 'karyawan_id', 'no_pm', 'kode_pengambilan', 'shift', 'shift_manual',
         'created_at', 'updated_at',
     ];
 
@@ -18,6 +18,7 @@ class HistoryLog extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'rekon_abaikan' => 'boolean',
+        'shift_manual' => 'boolean',
     ];
 
     public function karyawan()
@@ -40,18 +41,18 @@ class HistoryLog extends Model
         return $this->sisa <= 0 ? 'diretur_semua' : 'diretur_sebagian';
     }
 
+    /**
+     * Shift saat pengambilan. Dicatat otomatis ketika barang diambil (Karyawan::labelShift);
+     * catatan lama tanpa isian dihitung dari jam pengambilan.
+     */
     public function getShiftAttribute(): string
     {
-        $jam = $this->created_at->format('H:i');
+        return $this->attributes['shift'] ?? Karyawan::shiftMenurutJam($this->created_at);
+    }
 
-        if ($jam >= '06:30' && $jam < '14:30') {
-            return 'Shift 1';
-        }
-
-        if ($jam >= '14:30' && $jam < '22:30') {
-            return 'Shift 2';
-        }
-
-        return 'Shift 3';
+    /** Label shift untuk tampilan & ekspor; pilihan teknisi (berbeda dari bawaan Pak Nardi) ditandai. */
+    public function getLabelShiftAttribute(): string
+    {
+        return __($this->shift) . ($this->shift_manual ? ' · ' . __('chosen by technician') : '');
     }
 }

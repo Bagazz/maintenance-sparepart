@@ -163,11 +163,8 @@ class HistoryController extends Controller
         return $query;
     }
 
-    /**
-     * Batas baris PDF. dompdf butuh ±0,5 MB memori per baris tabel (400 baris ≈ 200 MB, ±4 detik),
-     * jadi PDF = laporan cetak berisi catatan terbaru; daftar lengkap tanpa batas ada di CSV.
-     */
-    public const MAKS_BARIS_PDF = 400;
+    /** Batas baris PDF (lihat Ekspor::MAKS_BARIS_PDF). */
+    public const MAKS_BARIS_PDF = Ekspor::MAKS_BARIS_PDF;
 
     public function exportPdf(Request $request)
     {
@@ -177,6 +174,11 @@ class HistoryController extends Controller
     public function exportCsv(Request $request)
     {
         return $this->ekspor($request, 'csv');
+    }
+
+    public function exportXlsx(Request $request)
+    {
+        return $this->ekspor($request, 'xlsx');
     }
 
     /**
@@ -201,7 +203,7 @@ class HistoryController extends Controller
                     : ($h->qty_returned > 0 ? __('Used') . ' · ' . __(':n returned', ['n' => $h->qty_returned]) : __('Used'));
 
                 return [
-                    $h->created_at->format('Y-m-d'), $erp ? '-' : $h->created_at->format('H:i'), $erp ? '-' : $h->shift,
+                    $h->created_at->format('Y-m-d'), $erp ? '-' : $h->created_at->format('H:i'), $erp ? '-' : $h->label_shift,
                     $h->part_no, $h->item_name ?? '-', (int) $h->jumlah, (int) $h->qty_returned, (int) $h->sisa,
                     $h->peminjam ?? '-', $erp ? __('ERP import') : __('App scan'), $h->machine ?? '-', $h->no_pm ?? '-', $status,
                 ];
@@ -218,7 +220,7 @@ class HistoryController extends Controller
                 optional($t->tanggal_transaksi ?? $t->created_at)->format('Y-m-d'), $t->inventory->part_no ?? '-', $t->inventory->deskripsi ?? '-',
                 (int) $t->qty, (float) $t->harga_satuan, (float) $t->total_harga, $t->keterangan ?? __('Purchasing Excel import'),
             ]);
-            $ringkasan = [__('Records') => $data->count(), __('Qty received') => $data->sum('qty'), __('Total value') => 'Rp ' . number_format((float) $data->sum('total_harga'), 0, ',', '.')];
+            $ringkasan = [__('Records') => $data->count(), __('Qty received') => $data->sum('qty'), __('Total value (Rp)') => (float) $data->sum('total_harga')];
             $total = [0 => __('Total'), 3 => $data->sum('qty'), 5 => (float) $data->sum('total_harga')];
         } else {
             $judul = __('Stock Adjustment History');
@@ -233,16 +235,6 @@ class HistoryController extends Controller
             $total = [0 => __('Total'), 3 => $data->sum('qty')];
         }
 
-        $header = array_column($kolom, 0);
-        $namaFile = $file . '-' . now()->format('Ymd-Hi');
-
-        if ($format === 'csv') {
-            return Ekspor::unduhCsv($namaFile . '.csv', $header, $baris);
-        }
-
-        // ---- PDF ---- (memori & waktu ditambah khusus untuk pembuatan PDF)
-        ini_set('memory_limit', '512M');
-        set_time_limit(120);
         $tanggal = $baris->pluck(0)->filter();
         $keterangan = [
             $tanggal->isNotEmpty() ? __('Period :dari – :sampai', ['dari' => Carbon::parse($tanggal->min())->translatedFormat('d M Y'), 'sampai' => Carbon::parse($tanggal->max())->translatedFormat('d M Y')]) : null,
@@ -251,31 +243,9 @@ class HistoryController extends Controller
                 $tab === 'out' && $request->get('mesin') ? __('Machine') . ': ' . $request->get('mesin') : null,
                 $tab === 'out' && $request->get('operator') ? __('Operator') . ': ' . $request->get('operator') : null,
             ])->filter()->implode(' · ') ?: __('All records (no filter)'),
+            __('Generated :tgl', ['tgl' => now()->translatedFormat('d M Y H:i')]),
         ];
-        $terpotong = $baris->count() > self::MAKS_BARIS_PDF;
-        $jenis = array_column($kolom, 1);
-        $tampil = fn ($v, $j) => match ($j) {
-            'tanggal' => $v ? Carbon::parse($v)->translatedFormat('d M Y') : '-',
-            'angka'   => number_format((float) $v, 0, ',', '.'),
-            'rp'      => number_format((float) $v, 0, ',', '.'),
-            default   => (string) $v,
-        };
-        $barisPdf = $baris->take(self::MAKS_BARIS_PDF)->map(fn ($r) => array_map($tampil, $r, $jenis))->values()->all();
-        $kanan = array_keys(array_filter($jenis, fn ($j) => in_array($j, ['angka', 'rp'], true)));
-        $totalPdf = collect($total)->map(fn ($v, $i) => $i === 0 ? $v : $tampil($v, $jenis[$i]))->all();
 
-        $pdf = Pdf::loadView('ekspor.tabel-pdf', [
-            'judulDok'   => $judul,
-            'keterangan' => $keterangan,
-            'kaki'       => $judul,
-            'ringkasan'  => collect($ringkasan)->map(fn ($v) => is_numeric($v) ? number_format((float) $v, 0, ',', '.') : $v)->all(),
-            'header'     => $header,
-            'baris'      => $barisPdf,
-            'kanan'      => $kanan,
-            'total'      => $terpotong ? [] : $totalPdf,
-            'catatan'    => $terpotong ? __('Showing the latest :n of :total records. Download the CSV for the complete list.', ['n' => number_format(self::MAKS_BARIS_PDF, 0, ',', '.'), 'total' => number_format($baris->count(), 0, ',', '.')]) : null,
-        ])->setOption('enable_font_subsetting', true)->setPaper('a4', 'landscape');   // font dipangkas: file kecil, mudah dikirim
-
-        return $pdf->download($namaFile . '.pdf');
+        return Ekspor::unduhTabel($format, $judul, $file . '-' . now()->format('Ymd-Hi'), $kolom, $baris, $total, $ringkasan, $keterangan, 'Riwayat' . ucfirst($tab));
     }
 }

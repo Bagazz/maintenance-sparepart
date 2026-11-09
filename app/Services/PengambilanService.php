@@ -34,12 +34,17 @@ class PengambilanService
      * @param int|null $permintaanId permintaan yang sedang disetujui (pesanannya sendiri tidak dihitung)
      * @throws \RuntimeException stok tidak cukup / part tidak ada
      */
-    public function catat(string $partNo, int $jumlah, string $mesin, ?Karyawan $karyawan, ?string $noPm = null, ?string $kode = null, ?int $permintaanId = null): Inventory
+    /**
+     * @param string|null $pola pilihan Shift/Non-shift teknisi di kiosk (null = bawaan dari menu Karyawan)
+     * @param \DateTimeInterface|null $waktuShift waktu yang menentukan shift (permintaan yang disetujui belakangan memakai waktu permintaan)
+     */
+    public function catat(string $partNo, int $jumlah, string $mesin, ?Karyawan $karyawan, ?string $noPm = null, ?string $kode = null, ?int $permintaanId = null, ?string $pola = null, ?\DateTimeInterface $waktuShift = null): Inventory
     {
+        $polaPakai = $karyawan?->polaEfektif($pola);
         $namaPeminjam = $karyawan?->nama ?? auth()->user()->name;
         $noPm = $noPm !== null && trim($noPm) !== '' ? strtoupper(trim($noPm)) : null;
 
-        return DB::transaction(function () use ($partNo, $jumlah, $mesin, $karyawan, $namaPeminjam, $noPm, $kode, $permintaanId) {
+        return DB::transaction(function () use ($partNo, $jumlah, $mesin, $karyawan, $namaPeminjam, $noPm, $kode, $permintaanId, $polaPakai, $waktuShift) {
             $item = Inventory::where('part_no', $partNo)->lockForUpdate()->first();
 
             if (!$item) {
@@ -62,6 +67,8 @@ class PengambilanService
                 'karyawan_id'      => $karyawan?->id,
                 'no_pm'            => $noPm,
                 'kode_pengambilan' => $kode,
+                'shift'            => Karyawan::labelShift($karyawan, $waktuShift ?? now(), $polaPakai),
+                'shift_manual'     => $karyawan !== null && $polaPakai !== $karyawan->pola_kerja,
                 // Semua pengambilan = dipakai. Yang tidak jadi dipakai cukup diretur lewat menu Pengembalian.
                 'aksi'             => 'pakai',
                 'jumlah'           => $jumlah,

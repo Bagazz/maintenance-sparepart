@@ -17,27 +17,34 @@
                 <p class="truncate text-lg font-extrabold text-slate-900">{{ $karyawan->nama }}
                     @if($karyawan->nomor_kartu)<span class="ml-1 font-mono text-xs font-bold text-slate-400">#{{ $karyawan->nomor_kartu }}</span>@endif
                 </p>
-                @if($karyawan->bagian)<span class="badge mt-0.5 bg-brand-50 text-brand-700">{{ $karyawan->bagian }}</span>@endif
+                <div class="mt-0.5 flex flex-wrap gap-1">
+                    @if($karyawan->bagian)<span class="badge bg-brand-50 text-brand-700">{{ $karyawan->bagian }}</span>@endif
+                    {{-- Pola kerja (diatur Kepala Spare Part); shift tiap pengambilan dicatat otomatis dari jam --}}
+                </div>
             </div>
-            {{-- Shift bergilir tiap minggu: teknisi memastikan / mengganti shift-nya sendiri --}}
-            <form method="POST" action="{{ route('inventory.shift') }}"
-                  class="flex items-center gap-2 rounded-xl px-3 py-2 {{ $karyawan->shift_minggu_ini ? 'bg-slate-50' : 'bg-amber-50 ring-2 ring-amber-300' }}">
-                @csrf
-                <label for="shift-saya" class="text-xs font-bold uppercase tracking-wider {{ $karyawan->shift_minggu_ini ? 'text-slate-400' : 'text-amber-800' }}">{{ __('Shift this week') }}</label>
-                <select id="shift-saya" name="shift" class="input w-auto py-1.5 text-sm font-bold" required>
-                    <option value="" disabled @selected(!$karyawan->shift)>{{ __('Choose...') }}</option>
-                    @foreach(\App\Models\Karyawan::SHIFT as $s)<option @selected($karyawan->shift === $s)>{{ $s }}</option>@endforeach
-                </select>
-                <button class="{{ $karyawan->shift_minggu_ini ? 'btn-ghost' : 'btn-primary' }} px-3 py-1.5 text-xs">{{ $karyawan->shift_minggu_ini ? __('Save') : __('Confirm shift') }}</button>
-            </form>
+            {{-- Pola kerja: bawaan dari Pak Nardi; teknisi boleh mengganti untuk sesi ini (kecuali dikunci). Nomor shift dicatat otomatis dari jam. --}}
+            @php $polaSesi = $karyawan->polaEfektif(session('pola_sesi')); @endphp
+            <div class="rounded-xl bg-slate-50 px-3 py-2">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ __('Work pattern') }}</p>
+                @if($karyawan->boleh_ganti_pola)
+                    <form method="POST" action="{{ route('inventory.pola') }}" class="mt-1 flex items-center gap-1">
+                        @csrf
+                        @foreach(\App\Models\Karyawan::POLA as $p)
+                            <button name="pola" value="{{ $p }}" @class(['rounded-lg px-3 py-1 text-xs font-bold transition', 'bg-brand-600 text-white' => $polaSesi === $p, 'bg-white text-slate-500 ring-1 ring-slate-200 hover:text-brand-700' => $polaSesi !== $p])>{{ __($p) }}</button>
+                        @endforeach
+                    </form>
+                @else
+                    <p class="mt-1 text-xs font-bold text-slate-700">{{ __($polaSesi) }} <span class="font-semibold text-slate-400">· {{ __('set by the spare part head') }}</span></p>
+                @endif
+                <p class="mt-1 text-[11px] font-semibold text-slate-500" title="{{ __('Recorded automatically on each take-out') }}">
+                    {{ __('Recorded as') }}: <span class="text-slate-800">{{ $polaSesi === 'Non-shift' ? __(\App\Models\Karyawan::labelShift($karyawan, now(), $polaSesi)) : __('Shift') . ' · ' . __(\App\Models\Karyawan::shiftMenurutJam(now())) }}</span>
+                </p>
+            </div>
             <div class="text-right">
                 <p class="text-xs font-bold uppercase tracking-wider text-slate-400">{{ __('Session ends in') }}</p>
                 <p class="font-mono text-lg font-bold" :class="sisa < 60 ? 'text-accent-600' : 'text-slate-700'" x-text="label"></p>
             </div>
             <a href="{{ route('inventory.ganti-peminjam') }}" class="btn-ghost">{{ __('Sign out') }}</a>
-            @unless($karyawan->shift_minggu_ini)
-                <p class="w-full text-sm font-semibold text-amber-800">{{ __('Shifts rotate every week. Choose your shift for this week and press Confirm shift before confirming the cart.') }}</p>
-            @endunless
         </div>
     @endif
 

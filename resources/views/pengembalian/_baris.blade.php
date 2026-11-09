@@ -16,7 +16,7 @@
             {{ $t->peminjam ?? $t->operator ?? '-' }}
             · {{ __('Machine') }} {{ $t->machine ?? '-' }}
             @if($t->no_pm) · <span class="font-mono">{{ $t->no_pm }}</span>@endif
-            · {{ $t->created_at->format('d M Y H:i') }} ({{ $t->shift }})
+            · {{ $t->created_at->format('d M Y H:i') }} ({{ $t->label_shift }})
         </p>
     </div>
 

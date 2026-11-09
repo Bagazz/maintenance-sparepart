@@ -9,7 +9,7 @@ class PermintaanAmbil extends Model
 {
     protected $table = 'permintaan_ambil';
 
-    protected $fillable = ['kode', 'karyawan_id', 'peminjam', 'status', 'total_nilai', 'alasan_tolak', 'diputus_oleh', 'diputus_at'];
+    protected $fillable = ['kode', 'karyawan_id', 'peminjam', 'pola', 'status', 'total_nilai', 'alasan_tolak', 'diputus_oleh', 'diputus_at'];
 
     protected $casts = [
         'total_nilai' => 'float',

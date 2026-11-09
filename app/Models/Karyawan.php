@@ -12,22 +12,28 @@ use Illuminate\Support\Facades\Hash;
  */
 class Karyawan extends Model
 {
-    /** Pilihan shift (sama untuk admin dan teknisi). */
-    public const SHIFT = ['Shift 1', 'Shift 2', 'Shift 3', 'Non-shift'];
+    /** Pola kerja karyawan (diatur Kepala Spare Part). Kosong dianggap "Shift". */
+    public const POLA = ['Shift', 'Non-shift'];
+
+    /** Jam kerja normal karyawan non-shift (Senin–Sabtu). */
+    public const JAM_NONSHIFT = ['08:00', '17:00'];
+
+    /** Label shift yang dicatat pada pengambilan (teks sumber; ditampilkan lewat terjemahan). */
+    public const LABEL_DI_LUAR_JAM = 'Non-shift (outside working hours)';
 
     /** Password salah berturut-turut sebanyak ini -> akun terkunci sampai dibuka admin. */
     public const MAKS_PIN_SALAH = 5;
 
     // Kolom PIN sengaja tidak fillable: hanya diubah lewat aturPin() / bukaKunci().
-    protected $fillable = ['nomor_kartu', 'nama', 'bagian', 'shift', 'shift_dikonfirmasi_at', 'aktif'];
+    protected $fillable = ['nomor_kartu', 'nama', 'bagian', 'shift', 'boleh_ganti_pola', 'aktif'];
 
     protected $hidden = ['pin_hash'];
 
     protected $casts = [
         'aktif'           => 'boolean',
+        'boleh_ganti_pola' => 'boolean',
         'pin_terkunci_at' => 'datetime',
         'pin_diatur_at'   => 'datetime',
-        'shift_dikonfirmasi_at' => 'datetime',
     ];
 
     public function historyLogs()
@@ -139,19 +145,66 @@ class Karyawan extends Model
         return false;
     }
 
-    /**
-     * Shift bergilir tiap minggu: shift dianggap sudah pasti bila diisi dan dikonfirmasi
-     * (oleh teknisi atau admin) sejak Senin minggu ini.
-     */
-    public function getShiftMingguIniAttribute(): bool
+    public function getNonShiftAttribute(): bool
     {
-        return $this->shift !== null && $this->shift_dikonfirmasi_at !== null
-            && $this->shift_dikonfirmasi_at->gte(now()->startOfWeek());
+        return $this->shift === 'Non-shift';
     }
 
-    public function aturShift(string $shift): void
+    /** Pola kerja untuk tampilan ("Shift" bila belum diatur). */
+    public function getPolaKerjaAttribute(): string
     {
-        $this->forceFill(['shift' => $shift, 'shift_dikonfirmasi_at' => now()])->save();
+        return $this->non_shift ? 'Non-shift' : 'Shift';
+    }
+
+    /**
+     * Pola kerja yang berlaku untuk satu sesi kiosk: pilihan teknisi (bila Pak Nardi mengizinkan),
+     * selain itu bawaan dari menu Karyawan.
+     */
+    public function polaEfektif(?string $pilihan): string
+    {
+        return $this->boleh_ganti_pola !== false && in_array($pilihan, self::POLA, true) ? $pilihan : $this->pola_kerja;
+    }
+
+    /** Shift menurut jam: Shift 1 06:30–14:30, Shift 2 14:30–22:30, Shift 3 22:30–06:30. */
+    public static function shiftMenurutJam(\DateTimeInterface $waktu): string
+    {
+        $jam = $waktu->format('H:i');
+
+        return match (true) {
+            $jam >= '06:30' && $jam < '14:30' => 'Shift 1',
+            $jam >= '14:30' && $jam < '22:30' => 'Shift 2',
+            default                           => 'Shift 3',
+        };
+    }
+
+    /**
+     * Label shift untuk satu pengambilan — otomatis, teknisi tidak perlu memilih:
+     * karyawan shift -> Shift 1/2/3 menurut jam; non-shift -> "Non-shift", atau
+     * "Non-shift (di luar jam kerja)" bila di luar 08:00–17:00 / hari Minggu (indikasi lembur).
+     */
+    public static function labelShift(?self $karyawan, \DateTimeInterface $waktu, ?string $pola = null): string
+    {
+        if (($pola ?? $karyawan?->pola_kerja) !== 'Non-shift') {
+            return self::shiftMenurutJam($waktu);
+        }
+
+        $jam = $waktu->format('H:i');
+        $diLuar = $waktu->format('N') === '7' || $jam < self::JAM_NONSHIFT[0] || $jam >= self::JAM_NONSHIFT[1];
+
+        return $diLuar ? self::LABEL_DI_LUAR_JAM : 'Non-shift';
+    }
+
+    /** Nilai pola kerja dari Excel / form: 1, 2, 3, "Shift 2", "shift" -> Shift; "non shift", "NS" -> Non-shift. */
+    public static function normalPola(?string $nilai): ?string
+    {
+        $v = strtolower(preg_replace('/[\s_-]+/', '', (string) $nilai));
+
+        return match (true) {
+            $v === ''                                              => null,
+            in_array($v, ['nonshift', 'ns', 'normal', 'office'], true) => 'Non-shift',
+            (bool) preg_match('/^(shift)?[123]?$/', $v)            => 'Shift',
+            default                                                => null,
+        };
     }
 
     public function getSisaPercobaanAttribute(): int

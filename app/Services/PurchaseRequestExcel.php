@@ -194,7 +194,9 @@ class PurchaseRequestExcel
 
         // ---------- Tampilan & cetak ----------
         $s->freezePane('D' . ($hdr + 1));
-        $s->setAutoFilter("A{$hdr}:O{$akhir}");
+        if ($akhir > $hdr && $barang->isNotEmpty()) {
+            Ekspor::tabelExcel($s, "A{$hdr}:O{$akhir}", 'TabelPR');   // tabel otomatis: filter tiap kolom, baris berselang warna
+        }
         Ekspor::cetakExcel($s, 'Purchase Request ' . $info['nomor'], true, $hdr);
         $s->setSelectedCell('J' . ($hdr + 1));
 

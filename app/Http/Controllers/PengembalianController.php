@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use App\Models\HistoryLog;
 use App\Models\Inventory;
 use App\Models\InventoryTransaction;
+use App\Support\Ekspor;
+use Illuminate\Support\Carbon;
 
 class PengembalianController extends Controller
 {
@@ -46,6 +48,73 @@ class PengembalianController extends Controller
         }
 
         return view('pengembalian.index', compact('transaksi', 'q', 'terbaru', 'returBulanIni'));
+    }
+
+    /** Pilihan periode ekspor retur: kunci => [label, awal]. */
+    public static function pilihanPeriode(): array
+    {
+        return [
+            'bulan-ini'  => [__('This month'), now()->startOfMonth()],
+            'bulan-lalu' => [__('Last month'), now()->subMonthNoOverflow()->startOfMonth()],
+            '90-hari'    => [__('Last 90 days'), now()->subDays(90)->startOfDay()],
+            'semua'      => [__('All time'), null],
+        ];
+    }
+
+    /**
+     * Ekspor riwayat retur (setiap kejadian retur = satu baris) dalam Excel / CSV / PDF.
+     * Sumber: transaksi app_return (stok kembali & koreksi biaya mesin) + data pengambilan aslinya.
+     */
+    public function ekspor(Request $request)
+    {
+        $data = $request->validate([
+            'format'  => ['required', 'in:xlsx,csv,pdf'],
+            'periode' => ['nullable', 'in:' . implode(',', array_keys(self::pilihanPeriode()))],
+            'q'       => ['nullable', 'string', 'max:100'],
+        ]);
+        $periode = $data['periode'] ?? 'bulan-ini';
+        [$labelPeriode, $awal] = self::pilihanPeriode()[$periode];
+        $akhir = $periode === 'bulan-lalu' ? now()->startOfMonth()->subSecond() : now();
+        $q = trim((string) ($data['q'] ?? ''));
+
+        $retur = InventoryTransaction::query()
+            ->where('inventory_transactions.source_type', 'app_return')
+            ->join('history_logs as h', 'h.id', '=', 'inventory_transactions.history_log_id')
+            ->leftJoin('inventories as i', 'i.id', '=', 'inventory_transactions.inventory_id')
+            ->when($awal, fn ($w) => $w->whereBetween('inventory_transactions.created_at', [$awal, $akhir]))
+            ->when($q !== '', fn ($w) => $w->where(function ($sub) use ($q) {
+                $sub->where('h.part_no', 'like', "%$q%")->orWhere('h.item_name', 'like', "%$q%")->orWhere('h.machine', 'like', "%$q%")
+                    ->orWhere('h.peminjam', 'like', "%$q%")->orWhere('h.no_pm', 'like', "%$q%");
+            }))
+            ->orderByDesc('inventory_transactions.created_at')
+            ->get([
+                'inventory_transactions.created_at as waktu', 'inventory_transactions.qty', 'inventory_transactions.harga_satuan', 'inventory_transactions.total_harga',
+                'h.part_no', 'h.item_name', 'h.peminjam', 'h.machine', 'h.no_pm', 'h.created_at as diambil', 'h.jumlah', 'h.qty_returned', 'i.deskripsi',
+            ]);
+
+        $kolom = [
+            [__('Return date'), 'tanggal'], [__('Time'), 'teks'], [__('Part No'), 'teks'], [__('Description'), 'teks'], [__('Qty returned'), 'angka'],
+            [__('Unit price (Rp)'), 'rp'], [__('Value returned (Rp)'), 'rp'], [__('Taken by'), 'teks'], [__('Machine / Job'), 'teks'], [__('PM No'), 'teks'],
+            [__('Taken on'), 'tanggal'], [__('Qty taken'), 'angka'], [__('Net used'), 'angka'],
+        ];
+        $baris = $retur->map(fn ($r) => [
+            Carbon::parse($r->waktu)->format('Y-m-d'), Carbon::parse($r->waktu)->format('H:i'), (string) $r->part_no, $r->deskripsi ?? $r->item_name ?? '-',
+            (int) abs($r->qty), (float) $r->harga_satuan, (float) abs($r->total_harga), $r->peminjam ?? '-', $r->machine ?? '-', $r->no_pm ?? '-',
+            Carbon::parse($r->diambil)->format('Y-m-d'), (int) $r->jumlah, (int) ($r->jumlah - $r->qty_returned),
+        ]);
+
+        $qtyRetur = $retur->sum(fn ($r) => abs($r->qty));
+        $nilaiRetur = $retur->sum(fn ($r) => abs($r->total_harga));
+        $keterangan = [
+            __('Period') . ': ' . $labelPeriode . ($awal ? ' (' . $awal->translatedFormat('d M Y') . ' – ' . $akhir->translatedFormat('d M Y') . ')' : ''),
+            $q !== '' ? __('Search') . ': "' . $q . '"' : __('All records (no filter)'),
+            __('Generated :tgl', ['tgl' => now()->translatedFormat('d M Y H:i')]) . ' · ' . __('Returned items go back to stock and are deducted from the machine cost.'),
+        ];
+
+        return Ekspor::unduhTabel($data['format'], __('Return History'), 'Return-History-' . now()->format('Ymd-Hi'), $kolom, $baris,
+            [0 => __('Total'), 4 => $qtyRetur, 6 => $nilaiRetur],
+            [__('Returns') => $retur->count(), __('Qty returned') => $qtyRetur, __('Value returned (Rp)') => $nilaiRetur],
+            $keterangan, 'TabelRetur');
     }
 
     public function kembalikan(Request $request, HistoryLog $history)

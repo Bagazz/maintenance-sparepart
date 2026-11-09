@@ -16,6 +16,28 @@
         </div>
     </div>
 
+    {{-- ============ EKSPOR RIWAYAT RETUR ============ --}}
+    <form method="GET" action="{{ route('pengembalian.export') }}" class="card flex flex-col gap-3 border-brand-200 p-4 md:flex-row md:items-center">
+        <input type="hidden" name="q" value="{{ $q }}">
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <div class="flex-1">
+            <p class="font-bold text-slate-800">{{ __('Return history report') }}</p>
+            <p class="text-xs text-slate-500">{{ __('Every return with part, quantity, value deducted from the machine cost, and the original take-out.') }}{{ $q !== '' ? ' ' . __('Follows the current search.') : '' }}</p>
+        </div>
+        <select name="periode" class="input md:w-48" aria-label="{{ __('Period') }}">
+            @foreach(\App\Http\Controllers\PengembalianController::pilihanPeriode() as $kunci => [$label])
+                <option value="{{ $kunci }}">{{ $label }}</option>
+            @endforeach
+        </select>
+        <div class="flex gap-2">
+            <button name="format" value="xlsx" class="btn-success flex-1 whitespace-nowrap">Excel</button>
+            <button name="format" value="csv" class="btn-ghost flex-1 whitespace-nowrap" title="{{ __('CSV = raw data for other systems (no logo or formatting). For a neat file to read or print, use Excel or PDF.') }}">CSV</button>
+            <button name="format" value="pdf" class="btn-ghost flex-1 whitespace-nowrap">PDF</button>
+        </div>
+    </form>
+
     <form method="GET" action="{{ route('pengembalian.index') }}" class="card flex items-center gap-2 p-3">
         <input type="text" name="q" value="{{ $q }}" class="input" placeholder="{{ __('Search part, item name, machine, technician, or PM No...') }}">
         <button class="btn-primary">{{ __('Search') }}</button>
